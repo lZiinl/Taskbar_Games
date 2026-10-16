@@ -14,8 +14,11 @@ namespace TaskbarGames.Games.Pet
         {
             AutoScaleMode = AutoScaleMode.None;
             FormBorderStyle = FormBorderStyle.None; StartPosition = FormStartPosition.Manual;
-            Bounds = Screen.PrimaryScreen.WorkingArea;
-            BackColor = ArcadeTheme.Black; Opacity = 0.85; TopMost = true;
+            Rectangle area = Screen.PrimaryScreen.WorkingArea;
+            MinimumSize = MaximumSize = new Size(area.Width, 24);
+            Bounds = new Rectangle(area.Left, area.Bottom - 24, area.Width, 24);
+            BackColor = TransparencyKey = Color.Magenta;
+            TopMost = true;
             ShowInTaskbar = false; DoubleBuffered = true; Cursor = Cursors.Cross;
             previewX = PointToClient(Cursor.Position).X;
             MouseMove += delegate(object sender, MouseEventArgs e) { previewX = e.X; Invalidate(); };
@@ -26,14 +29,23 @@ namespace TaskbarGames.Games.Pet
             };
             Deactivate += delegate { Close(); };
         }
+        protected override void OnShown(EventArgs e)
+        {
+            base.OnShown(e);
+            // Capture only for this explicit placement step. The transparent background
+            // does not tint the desktop, and clicks still select a horizontal position.
+            Capture = true;
+        }
+        protected override void OnFormClosed(FormClosedEventArgs e)
+        {
+            Capture = false;
+            base.OnFormClosed(e);
+        }
         protected override bool ProcessCmdKey(ref Message msg, Keys keys)
         { if (keys == Keys.Escape) { DialogResult = DialogResult.Cancel; Close(); return true; } return base.ProcessCmdKey(ref msg, keys); }
         protected override void OnPaint(PaintEventArgs e)
         {
             base.OnPaint(e);
-            using (Pen p = new Pen(ArcadeTheme.Neon)) e.Graphics.DrawLine(p, 0, Height - 2, Width, Height - 2);
-            TextRenderer.DrawText(e.Graphics, "도토리를 놓을 위치를 클릭하세요 · Esc / 우클릭: 취소", SystemFonts.MessageBoxFont,
-                new Point(Math.Max(12, Width / 2 - 180), Height - 70), ArcadeTheme.Neon);
             int bounded = Math.Max(38, Math.Min(Width - 38, previewX));
             AcornMarker.DrawAcorn(e.Graphics, bounded - 5, Height - 12);
         }

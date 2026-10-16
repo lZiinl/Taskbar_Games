@@ -18,3 +18,4 @@ if ($LASTEXITCODE -ne 0) { throw 'Test build failed.' }
 [BaseballRegressionTests]::Run($artifacts)
 [LauncherRegressionTests]::Run($artifacts)
 [PetRegressionTests]::Run($artifacts)
+[RunnerRegressionTests]::Run($artifacts)

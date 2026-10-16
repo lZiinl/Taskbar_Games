@@ -17,11 +17,12 @@ namespace TaskbarGames.Shared
         public static readonly Color Neon = Color.FromArgb(85, 255, 160);
         public static readonly Color Cyan = Color.FromArgb(66, 232, 255);
         public static readonly Color Pink = Color.FromArgb(255, 91, 183);
-        public static void Style(ContextMenuStrip menu)
+        public static void Style(ToolStripDropDown menu)
         {
             menu.Renderer = new ArcadeMenuRenderer();
             menu.BackColor = Black; menu.ForeColor = Neon;
-            menu.ShowImageMargin = false;
+            ContextMenuStrip context = menu as ContextMenuStrip;
+            if (context != null) context.ShowImageMargin = false;
             menu.Padding = new Padding(5);
             menu.Font = new Font("Malgun Gothic", 9f);
         }
@@ -37,6 +38,8 @@ namespace TaskbarGames.Shared
                 if (e.Item.Selected && e.Item.Enabled)
                     using (SolidBrush b = new SolidBrush(Color.FromArgb(28, 64, 48))) e.Graphics.FillRectangle(b, new Rectangle(Point.Empty, e.Item.Size));
             }
+            protected override void OnRenderButtonBackground(ToolStripItemRenderEventArgs e)
+            { OnRenderMenuItemBackground(e); }
             protected override void OnRenderItemText(ToolStripItemTextRenderEventArgs e)
             {
                 Color color = e.Item.Enabled ? (e.Item.Selected ? Color.White : Neon) : Cyan;

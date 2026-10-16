@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Drawing;
 using System.Globalization;
 using System.IO;
+using System.Collections.Generic;
 using System.Windows.Forms;
 using TaskbarGames.Shared;
 
@@ -13,17 +14,19 @@ namespace TaskbarGames.Games.Pet
         readonly Timer timer = new Timer();
         readonly Stopwatch clock = Stopwatch.StartNew();
         readonly Random random = new Random();
-        readonly ContextMenuStrip menu = new ContextMenuStrip();
-        readonly ToolStripMenuItem status = new ToolStripMenuItem();
+        readonly ToolStripDropDown menu = new ToolStripDropDown();
+        readonly ToolStripButton status = new ToolStripButton();
         readonly ToolTip hint = new ToolTip();
         readonly bool persist;
         readonly string savePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Taskbar_Games", "squirrel.txt");
         PetSession session = new PetSession();
         string action = "idle";
         double remaining = 120, lastTime, saveAge, x, petCooldown;
-        double? foodX;
-        AcornMarker foodMarker;
+        sealed class DroppedAcorn { public double X; public AcornMarker Marker; }
+        readonly List<DroppedAcorn> food = new List<DroppedAcorn>();
         bool placingFood;
+        bool attendingCare;
+        const int MaxAcorns = 5;
         int direction = 1;
         bool menuOpen;
         string saveError = "";
@@ -45,18 +48,32 @@ namespace TaskbarGames.Games.Pet
             x = Screen.PrimaryScreen.WorkingArea.Left + 120;
             PositionPet();
             ArcadeTheme.Style(menu);
-            status.Enabled = false;
+            menu.LayoutStyle = ToolStripLayoutStyle.HorizontalStackWithOverflow;
+            menu.AutoSize = false;
+            menu.Size = new Size(130, 34);
+            menu.ShowItemToolTips = true;
+            status.Image = PetMenuIcon("info");
             menu.Items.Add(status);
-            menu.Items.Add("도토리 놓기...", null, delegate { BeginInvoke(new Action(PlaceFood)); });
-            menu.Items.Add("쓰다듬기", null, delegate { Stroke(); });
-            menu.Items.Add("낮잠 자기 / 깨우기", null, delegate { StartAction(action == "sleep" ? "idle" : "sleep", action == "sleep" ? 120 : 300); });
-            menu.Items.Add(new ToolStripSeparator());
-            menu.Items.Add("게임 선택으로 돌아가기 (Esc)", null, delegate { Close(); });
+            menu.Items.Add(new ToolStripButton("도토리 놓기", PetMenuIcon("food"), delegate { menu.Close(); BeginInvoke(new Action(PlaceFood)); }));
+            menu.Items.Add(new ToolStripButton("쓰다듬기", PetMenuIcon("love"), delegate { menu.Close(); Stroke(); }));
+            menu.Items.Add(new ToolStripButton("낮잠 자기 / 깨우기", PetMenuIcon("sleep"), delegate { menu.Close(); StartAction(action == "sleep" ? "idle" : "sleep", action == "sleep" ? 120 : 300); }));
+            menu.Items.Add(new ToolStripButton("게임 선택으로 돌아가기 (Esc)", PetMenuIcon("back"), delegate { menu.Close(); Close(); }));
+            foreach (ToolStripItem item in menu.Items)
+            {
+                item.DisplayStyle = ToolStripItemDisplayStyle.Image;
+                item.ImageScaling = ToolStripItemImageScaling.None;
+                item.AutoSize = false; item.Size = new Size(24, 24);
+                item.Overflow = ToolStripItemOverflow.Never;
+                item.Margin = Padding.Empty; item.Padding = Padding.Empty;
+                item.ToolTipText = item.Text; item.AccessibleName = item.Text;
+            }
             menu.Opening += delegate { menuOpen = true; UpdateStatus(); };
             menu.Closed += delegate { menuOpen = false; lastTime = clock.Elapsed.TotalSeconds; };
-            ContextMenuStrip = menu;
             hint.SetToolTip(this, "다람쥐 · 클릭해서 쓰다듬기 · 우클릭으로 먹이와 낮잠");
-            MouseDown += delegate(object sender, MouseEventArgs e) { if (e.Button == MouseButtons.Left) Stroke(); };
+            MouseDown += delegate(object sender, MouseEventArgs e) {
+                if (e.Button == MouseButtons.Left) Stroke();
+                else if (e.Button == MouseButtons.Right) menu.Show(this, e.Location);
+            };
             KeyDown += delegate(object sender, KeyEventArgs e) { if (e.KeyCode == Keys.Escape) Close(); };
             timer.Interval = 40;
             timer.Tick += Tick;
@@ -67,22 +84,47 @@ namespace TaskbarGames.Games.Pet
         void UpdateStatus()
         {
             status.Text = String.Format("포만감 {0:0} · 기분 {1:0} · 도토리 {2}개{3}", session.Fullness, session.Mood, session.Meals, saveError);
+            status.ToolTipText = status.AccessibleName = status.Text;
+            menu.Items[1].Enabled = food.Count < MaxAcorns;
+            menu.Items[1].ToolTipText = food.Count >= MaxAcorns ? "도토리는 최대 5개까지 놓을 수 있어요" : "도토리 놓기 (" + food.Count + "/5)";
+        }
+        static Bitmap PetMenuIcon(string kind)
+        {
+            Bitmap bitmap = new Bitmap(18, 18);
+            using (Graphics g = Graphics.FromImage(bitmap))
+            {
+                if (kind == "food") AcornMarker.DrawAcorn(g, 3, 4);
+                else if (kind == "love") DrawHeart(g, 2, 3, 2);
+                else if (kind == "sleep") { PixelArt.Text(g, "Z", ArcadeTheme.Cyan, 2, 8); PixelArt.Text(g, "Z", ArcadeTheme.Cyan, 10, 2); }
+                else if (kind == "info")
+                {
+                    using (Pen p = new Pen(ArcadeTheme.Neon)) g.DrawRectangle(p, 2, 2, 13, 13);
+                    PixelArt.Text(g, "I", ArcadeTheme.Neon, 6, 5);
+                }
+                else
+                {
+                    Box(g, ArcadeTheme.Pink, 4, 8, 11, 2);
+                    for (int i = 0; i < 5; i++) { Box(g, ArcadeTheme.Pink, 3 + i, 8 - i, 2, 2); Box(g, ArcadeTheme.Pink, 3 + i, 8 + i, 2, 2); }
+                }
+            }
+            return bitmap;
         }
         void StartAction(string next, double seconds)
         {
             // Finish eating before accepting another activity or meal.
-            if (foodX.HasValue || action == "eat") return;
-            action = next; remaining = seconds; Invalidate();
+            if (action == "eat") return;
+            attendingCare = true;
+            action = next; remaining = next == "idle" && food.Count > 0 ? 0 : seconds; Invalidate();
         }
         void Stroke()
         {
-            if (clock.Elapsed.TotalSeconds < petCooldown || foodX.HasValue || action == "eat") return;
+            if (clock.Elapsed.TotalSeconds < petCooldown || action == "eat") return;
             session.Pet(); petCooldown = clock.Elapsed.TotalSeconds + 1.5;
             StartAction("love", 4); UpdateStatus();
         }
         void PlaceFood()
         {
-            if (IsDisposed || placingFood || action == "eat") return;
+            if (IsDisposed || placingFood || food.Count >= MaxAcorns) return;
             placingFood = true;
             timer.Stop();
             try
@@ -90,11 +132,11 @@ namespace TaskbarGames.Games.Pet
                 using (AcornPlacement picker = new AcornPlacement())
                     if (picker.ShowDialog(this) == DialogResult.OK)
                     {
-                        SetFoodTarget(picker.SelectedX);
-                        if (foodMarker != null) foodMarker.Dispose();
-                        foodMarker = new AcornMarker();
+                        if (!SetFoodTarget(picker.SelectedX)) return;
+                        DroppedAcorn added = food[food.Count - 1];
+                        added.Marker = new AcornMarker();
                         PositionFood();
-                        foodMarker.Show(this);
+                        added.Marker.Show(this);
                     }
             }
             finally
@@ -104,17 +146,23 @@ namespace TaskbarGames.Games.Pet
                 if (!IsDisposed) timer.Start();
             }
         }
-        internal void SetFoodTarget(double screenX)
+        internal bool SetFoodTarget(double screenX)
         {
-            if (Double.IsNaN(screenX) || Double.IsInfinity(screenX)) return;
+            if (food.Count >= MaxAcorns || Double.IsNaN(screenX) || Double.IsInfinity(screenX)) return false;
             Rectangle area = Screen.PrimaryScreen.WorkingArea;
-            foodX = Math.Max(area.Left + 38, Math.Min(area.Right - 38, screenX));
-            action = "walk"; remaining = 30;
+            food.Add(new DroppedAcorn { X = Math.Max(area.Left + 38, Math.Min(area.Right - 38, screenX)) });
+            if (action != "eat" && !attendingCare) { action = "walk"; remaining = 30; }
+            UpdateStatus();
+            return true;
         }
         void PositionFood()
         {
-            if (foodMarker == null || !foodX.HasValue) return;
-            foodMarker.Location = new Point((int)foodX.Value - 6, Screen.PrimaryScreen.WorkingArea.Bottom - 12);
+            Rectangle area = Screen.PrimaryScreen.WorkingArea;
+            foreach (DroppedAcorn acorn in food)
+            {
+                acorn.X = Math.Max(area.Left + 38, Math.Min(area.Right - 38, acorn.X));
+                if (acorn.Marker != null) acorn.Marker.Location = new Point((int)acorn.X - 6, area.Bottom - 12);
+            }
         }
         void PositionPet()
         {
@@ -137,11 +185,16 @@ namespace TaskbarGames.Games.Pet
         {
             if (dt <= 0 || Double.IsNaN(dt) || Double.IsInfinity(dt)) return;
             remaining -= dt;
-            if (foodX.HasValue)
+            PositionFood();
+            if (attendingCare && remaining > 0) { PositionPet(); return; }
+            attendingCare = false;
+            if (action == "eat" && remaining > 0) { PositionPet(); return; }
+            if (food.Count > 0)
             {
-                Rectangle area = Screen.PrimaryScreen.WorkingArea;
-                foodX = Math.Max(area.Left + 38, Math.Min(area.Right - 38, foodX.Value));
-                double destination = foodX.Value - 38;
+                DroppedAcorn nearest = food[0];
+                foreach (DroppedAcorn candidate in food)
+                    if (Math.Abs(candidate.X - x - 38) < Math.Abs(nearest.X - x - 38)) nearest = candidate;
+                double destination = nearest.X - 38;
                 double distance = destination - x;
                 if (Math.Abs(distance) > 0.1) direction = distance > 0 ? 1 : -1;
                 double travel = Math.Min(Math.Abs(distance), 36 * dt);
@@ -149,8 +202,9 @@ namespace TaskbarGames.Games.Pet
                 action = "walk";
                 if (Math.Abs(destination - x) < 0.1)
                 {
-                    foodX = null;
-                    if (foodMarker != null) { foodMarker.Dispose(); foodMarker = null; }
+                    food.Remove(nearest);
+                    UpdateStatus();
+                    if (nearest.Marker != null) nearest.Marker.Dispose();
                     action = "eat"; remaining = 6;
                     session.Feed(); SaveState();
                 }
@@ -314,7 +368,13 @@ namespace TaskbarGames.Games.Pet
         }
         protected override void Dispose(bool disposing)
         {
-            if (disposing) { timer.Dispose(); menu.Dispose(); hint.Dispose(); if (foodMarker != null) foodMarker.Dispose(); }
+            if (disposing)
+            {
+                timer.Dispose();
+                foreach (ToolStripItem item in menu.Items) if (item.Image != null) item.Image.Dispose();
+                menu.Dispose(); hint.Dispose();
+                foreach (DroppedAcorn acorn in food) if (acorn.Marker != null) acorn.Marker.Dispose();
+            }
             base.Dispose(disposing);
         }
     }

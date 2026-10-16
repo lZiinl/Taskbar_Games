@@ -65,13 +65,51 @@ public static class PetRegressionTests
             }
             strip.Save(Path.Combine(artifacts, "squirrel-poses.png"), ImageFormat.Png);
             typeof(PetGame).GetMethod("UpdateStatus", flags).Invoke(pet, null);
-            ContextMenuStrip menu = (ContextMenuStrip)typeof(PetGame).GetField("menu", flags).GetValue(pet);
-            menu.Size = menu.GetPreferredSize(Size.Empty);
+            ToolStripDropDown menu = (ToolStripDropDown)typeof(PetGame).GetField("menu", flags).GetValue(pet);
+            menu.PerformLayout();
+            Assert(menu.Items.Count == 5 && menu.Width <= 140 && menu.Height <= 40, "Pet menu must be a compact row of five icons.");
             using (Bitmap menuImage = new Bitmap(menu.Width, menu.Height))
             {
                 menu.DrawToBitmap(menuImage, menu.ClientRectangle);
                 menuImage.Save(Path.Combine(artifacts, "pet-menu.png"), ImageFormat.Png);
             }
+        }
+        using (PetGame pet = (PetGame)Activator.CreateInstance(typeof(PetGame), flags, null, new object[] { false }, null))
+        {
+            MethodInfo add = typeof(PetGame).GetMethod("SetFoodTarget", flags);
+            MethodInfo step = typeof(PetGame).GetMethod("AdvanceBehavior", flags);
+            FieldInfo position = typeof(PetGame).GetField("x", flags);
+            FieldInfo action = typeof(PetGame).GetField("action", flags);
+            double origin = Screen.PrimaryScreen.WorkingArea.Left + 250;
+            position.SetValue(pet, origin);
+            add.Invoke(pet, new object[] { origin + 38 + 180 });
+            add.Invoke(pet, new object[] { origin + 38 - 36 });
+            add.Invoke(pet, new object[] { origin + 38 + 72 });
+            System.Collections.ICollection food = (System.Collections.ICollection)typeof(PetGame).GetField("food", flags).GetValue(pet);
+            Assert(food.Count == 3, "New acorns must preserve existing acorns.");
+            step.Invoke(pet, new object[] { 1.0 });
+            PetSession state = (PetSession)typeof(PetGame).GetField("session", flags).GetValue(pet);
+            Assert(state.Meals == 1 && food.Count == 2 && Math.Abs((double)position.GetValue(pet) - origin + 36) < 0.1,
+                "Pet must eat nearest acorn first rather than first or last placed.");
+            add.Invoke(pet, new object[] { origin + 38 - 36 });
+            step.Invoke(pet, new object[] { 1.0 });
+            Assert(state.Meals == 1 && food.Count == 3 && (string)action.GetValue(pet) == "eat", "Adding food must not interrupt chewing.");
+            for (int i = 0; i < 700; i++) step.Invoke(pet, new object[] { 0.1 });
+            Assert(state.Meals == 4 && food.Count == 0, "Every queued acorn must be eaten exactly once.");
+            for (int i = 0; i < 5; i++) Assert((bool)add.Invoke(pet, new object[] { origin + 100 + i * 20 }), "Five acorns should be allowed.");
+            Assert(!(bool)add.Invoke(pet, new object[] { origin + 250 }) && food.Count == 5, "Sixth acorn must be rejected without removing existing food.");
+            typeof(PetGame).GetMethod("Stroke", flags).Invoke(pet, null);
+            double beforeCare = (double)position.GetValue(pet);
+            step.Invoke(pet, new object[] { 1.0 });
+            Assert((string)action.GetValue(pet) == "love" && (double)position.GetValue(pet) == beforeCare && food.Count == 5,
+                "Petting must interrupt food pursuit and keep queued acorns.");
+            step.Invoke(pet, new object[] { 4.0 });
+            Assert((string)action.GetValue(pet) != "love", "Pet must resume pursuit after petting.");
+            // Move away from any food so sleeping tests pursuit rather than chewing.
+            action.SetValue(pet, "walk");
+            typeof(PetGame).GetMethod("StartAction", flags).Invoke(pet, new object[] { "sleep", 300.0 });
+            step.Invoke(pet, new object[] { 10.0 });
+            Assert((string)action.GetValue(pet) == "sleep", "Manual sleep must take precedence over queued food.");
         }
         Type paletteType = typeof(PetGame).Assembly.GetType("TaskbarGames.Shared.TankPalette");
         using (Form palette = (Form)Activator.CreateInstance(paletteType, new object[] { Color.FromArgb(85, 255, 160) }))
@@ -98,6 +136,10 @@ public static class PetRegressionTests
         Type placementType = typeof(PetGame).Assembly.GetType("TaskbarGames.Games.Pet.AcornPlacement");
         using (Form placement = (Form)Activator.CreateInstance(placementType))
         {
+            Assert(placement.Height == 24 && placement.Bottom == Screen.PrimaryScreen.WorkingArea.Bottom,
+                "Placement should only occupy a narrow taskbar strip.");
+            Assert(placement.TransparencyKey == placement.BackColor && placement.Opacity == 1,
+                "Placement must not tint or dim the desktop.");
             placementType.GetMethod("OnMouseDown", flags).Invoke(placement, new object[] { new MouseEventArgs(MouseButtons.Left, 1, 240, 120, 0) });
             Assert(placement.DialogResult == DialogResult.OK, "Left click should confirm food placement.");
             Assert((int)placementType.GetProperty("SelectedX", flags).GetValue(placement, null) == Screen.PrimaryScreen.WorkingArea.Left + 240,

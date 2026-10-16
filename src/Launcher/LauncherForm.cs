@@ -5,6 +5,7 @@ using TaskbarGames.Games.Baseball;
 using TaskbarGames.Games.Fortress;
 using TaskbarGames.Shared;
 using TaskbarGames.Games.Pet;
+using TaskbarGames.Games.Runner;
 
 namespace TaskbarGames.Launcher
 {
@@ -21,8 +22,8 @@ namespace TaskbarGames.Launcher
             Icon = ArcadeTheme.AppIcon;
             AutoScaleMode = AutoScaleMode.None;
             FormBorderStyle = FormBorderStyle.None;
-            MinimumSize = MaximumSize = new Size(58, 58);
-            ClientSize = new Size(58, 58);
+            MinimumSize = MaximumSize = new Size(58, 74);
+            ClientSize = new Size(58, 74);
             BackColor = ArcadeTheme.Black;
             TopMost = true;
             StartPosition = FormStartPosition.Manual;
@@ -40,9 +41,14 @@ namespace TaskbarGames.Launcher
             pet.Bounds = new Rectangle(3, 31, 24, 24);
             pet.Click += delegate { OpenGame(delegate { return new PetGame(); }); };
             Controls.Add(pet);
+            GameCard runner = new GameCard(false, false, false, true);
+            runner.Bounds = new Rectangle(31, 31, 24, 24);
+            runner.Click += delegate { OpenGame(delegate { return new RunnerGame(); }); };
+            Controls.Add(runner);
+            hints.SetToolTip(runner, "공룡 러너 · SPACE로 점프 · 짧게 누르면 낮게 점프");
             GameCard exit = new GameCard(false, false, true);
             exit.Name = "ExitButton";
-            exit.Bounds = new Rectangle(31, 31, 24, 24);
+            exit.Bounds = new Rectangle(3, 59, 52, 12);
             exit.Click += delegate { Close(); };
             Controls.Add(exit);
             hints.SetToolTip(exit, "종료 (Esc)");
@@ -51,7 +57,7 @@ namespace TaskbarGames.Launcher
             hints.SetToolTip(baseball, "야구 · SPACE로 스윙");
             ArcadeTheme.Style(menu);
             menu.Items.Add("종료 (Esc)", null, delegate { Close(); });
-            ContextMenuStrip = fortress.ContextMenuStrip = baseball.ContextMenuStrip = pet.ContextMenuStrip = menu;
+            ContextMenuStrip = fortress.ContextMenuStrip = baseball.ContextMenuStrip = pet.ContextMenuStrip = runner.ContextMenuStrip = menu;
             PositionAboveTaskbar();
         }
 
@@ -134,6 +140,7 @@ namespace TaskbarGames.Launcher
             readonly bool baseball;
             readonly bool pet;
             readonly bool exit;
+            readonly bool runner;
             bool hovering;
             static readonly string[] Tank = {
                 "....................", ".................DDD", ".......DDDD...DDDLLD",
@@ -147,13 +154,14 @@ namespace TaskbarGames.Launcher
                 ".DRWWWWWWWD.", ".DWWWWWWWWD.", "..DDWWWWDD..", "....DDDD...."
             };
 
-            public GameCard(bool isBaseball, bool isPet = false, bool isExit = false)
+            public GameCard(bool isBaseball, bool isPet = false, bool isExit = false, bool isRunner = false)
             {
                 baseball = isBaseball;
                 pet = isPet;
                 exit = isExit;
-                AccessibleName = exit ? "종료" : pet ? "다람쥐" : isBaseball ? "야구" : "포트리스";
-                AccessibleDescription = exit ? "프로그램 종료 (Esc)" : pet ? "클릭해서 쓰다듬기, 우클릭으로 먹이 주기" : isBaseball ? "스페이스바로 스윙" : "스페이스바를 길게 눌러 거리 조절";
+                runner = isRunner;
+                AccessibleName = exit ? "종료" : runner ? "공룡 러너" : pet ? "다람쥐" : isBaseball ? "야구" : "포트리스";
+                AccessibleDescription = exit ? "프로그램 종료 (Esc)" : runner ? "스페이스바로 점프" : pet ? "클릭해서 쓰다듬기, 우클릭으로 먹이 주기" : isBaseball ? "스페이스바로 스윙" : "스페이스바를 길게 눌러 거리 조절";
                 Cursor = Cursors.Hand;
                 FlatStyle = FlatStyle.Flat;
                 FlatAppearance.BorderSize = 0;
@@ -170,13 +178,9 @@ namespace TaskbarGames.Launcher
                     g.DrawRectangle(border, 0, 0, Width - 1, Height - 1);
                 if (exit)
                 {
-                    using (SolidBrush brush = new SolidBrush(accent))
-                        for (int i = 0; i < 6; i++)
-                        {
-                            g.FillRectangle(brush, 6 + i * 2, 6 + i * 2, 2, 2);
-                            g.FillRectangle(brush, 16 - i * 2, 6 + i * 2, 2, 2);
-                        }
+                    PixelArt.Text(g, "EXIT", accent, 14, 3);
                 }
+                else if (runner) PixelArt.Sprite(g, RunnerGame.Dino, 2, 3, ArcadeTheme.Neon, 1);
                 else if (pet)
                 {
                     System.Drawing.Drawing2D.GraphicsState state = g.Save();
