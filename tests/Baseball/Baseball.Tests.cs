@@ -140,7 +140,7 @@ public static class BaseballRegressionTests
     {
         Type animator = typeof(BaseballGame).Assembly.GetType("TaskbarGames.Games.Baseball.BatterAnimation");
         MethodInfo draw = animator.GetMethod("Draw", BindingFlags.Public | BindingFlags.Static);
-        double[] times = { -1, 0.04, 0.09, BaseballSession.SwingContactDelay, 0.22, 0.34, 0.49, 0.72 };
+        double[] times = { -1, 0.02, 0.045, BaseballSession.SwingContactDelay, 0.13, 0.22, 0.32, BaseballSession.SwingDuration };
         using (Bitmap strip = new Bitmap(128 * times.Length, 100))
         using (Graphics g = Graphics.FromImage(strip))
         {
@@ -203,7 +203,7 @@ public static class BaseballRegressionTests
             BaseballSession state = (BaseballSession)typeof(BaseballGame).GetField("session", Private).GetValue(game);
             // Result gold is used only for the landed shot's distance/grade and marker.
             int resultPixels = 0;
-            int gold = Color.FromArgb(255, 206, 129).ToArgb();
+            int gold = Color.FromArgb(255, 233, 77).ToArgb();
             for (int y = bitmap.Height - 52; y < bitmap.Height; y++)
                 for (int x = 0; x < bitmap.Width; x++)
                     if (bitmap.GetPixel(x, y).ToArgb() == gold) resultPixels++;

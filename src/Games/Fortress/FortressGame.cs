@@ -27,8 +27,8 @@ namespace TaskbarGames.Games.Fortress
         readonly Timer timer = new Timer();
         readonly Stopwatch clock = Stopwatch.StartNew();
         readonly Random random = new Random();
-        readonly Color ink = Color.FromArgb(22, 30, 45);
-        readonly Color green = Color.FromArgb(102, 235, 177);
+        readonly Color ink = ArcadeTheme.Black;
+        readonly Color green = ArcadeTheme.Neon;
         static readonly string[] TankPixels = {
             "....................",
             "....................",
@@ -533,13 +533,11 @@ namespace TaskbarGames.Games.Fortress
             double pausedAt = clock.Elapsed.TotalSeconds;
             try
             {
-                using (ColorDialog picker = new ColorDialog())
+                using (TankPalette picker = new TankPalette(tankBase))
                 {
-                    picker.Color = tankBase;
-                    picker.FullOpen = true;
                     if (picker.ShowDialog(this) == DialogResult.OK)
                     {
-                        SetTankColor(picker.Color);
+                        SetTankColor(picker.SelectedColor);
                         try
                         {
                             SaveTankColor();

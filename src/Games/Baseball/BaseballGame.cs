@@ -12,11 +12,11 @@ namespace TaskbarGames.Games.Baseball
         readonly BaseballSession session = new BaseballSession();
         readonly Timer timer = new Timer();
         readonly Stopwatch clock = Stopwatch.StartNew();
-        readonly Color ink = Color.FromArgb(22, 30, 45);
-        readonly Color mint = Color.FromArgb(102, 235, 177);
-        readonly Color gold = Color.FromArgb(255, 206, 129);
+        readonly Color ink = ArcadeTheme.Black;
+        readonly Color mint = ArcadeTheme.Neon;
+        readonly Color gold = Color.FromArgb(255, 233, 77);
         const int ContactX = 108;
-        const float GameScale = 0.9f;
+        const float GameScale = 0.65f;
         float WorldWidth { get { return ClientSize.Width / GameScale; } }
         int ground, pitcherX;
         Rectangle closeButton;
@@ -171,13 +171,22 @@ namespace TaskbarGames.Games.Baseball
             Box(g, pitcherX - 22, ground - 2, 44, 2, Color.FromArgb(171, 141, 106));
             DrawPitchingArm(g);
 
-            Box(g, 130, ground - 16, 224, 16, ink);
             string score = session.Phase == BaseballPhase.Result ? "SCORE " + session.Score + "  BEST " + session.BestDistance + "M"
                 : !session.Active ? "CLICK TO PLAY" : session.Phase == BaseballPhase.Ready ? "READY..."
                 : session.Phase == BaseballPhase.Pitch ? "SPACE: SWING" : "BASEBALL";
-            PixelArt.Text(g, score, session.Active ? mint : Color.LightGray, 136, ground - 11);
-            Box(g, closeButton.Left - 3, closeButton.Top + 2, 1, 10, Color.SlateGray);
-            PixelArt.Text(g, "X", Color.LightGray, closeButton.Left + 5, closeButton.Top + 4);
+            // Keep text on device pixels even when the players and field are scaled down.
+            GraphicsState hudState = g.Save();
+            g.ResetTransform();
+            int hudX = (int)Math.Round(130 * GameScale), hudBottom = (int)Math.Round(ground * GameScale);
+            int hudWidth = Math.Max(156, PixelArt.Width(score) + 28);
+            Box(g, hudX, hudBottom - 18, hudWidth, 18, ink);
+            using (Pen border = new Pen(ArcadeTheme.Neon)) g.DrawRectangle(border, hudX, hudBottom - 18, hudWidth - 1, 17);
+            PixelArt.Text(g, score, session.Active ? mint : ArcadeTheme.Cyan, hudX + 5, hudBottom - 12);
+            Box(g, hudX + hudWidth - 19, hudBottom - 14, 1, 10, ArcadeTheme.Neon);
+            PixelArt.Text(g, "X", ArcadeTheme.Pink, hudX + hudWidth - 12, hudBottom - 12);
+            closeButton = new Rectangle((int)((hudX + hudWidth - 18) / GameScale), (int)((hudBottom - 18) / GameScale),
+                (int)Math.Ceiling(18 / GameScale), (int)Math.Ceiling(18 / GameScale));
+            g.Restore(hudState);
 
             if (session.Phase == BaseballPhase.Pitch || session.Phase == BaseballPhase.Flight)
             {
@@ -195,16 +204,20 @@ namespace TaskbarGames.Games.Baseball
             {
                 string label = session.LastHit.Hit ? (session.LastHit.HomeRun ? "HOME RUN" : session.LastHit.Grade) + " " + session.LastHit.Distance + "M" : session.LastHit.Grade;
                 string points = session.LastHit.Hit ? "+" + session.LastHit.Points + " PTS" : "0 PTS";
-                int width = Math.Max(PixelArt.Width(label), PixelArt.Width(points)) + 12;
-                int x = session.LastHit.Hit ? (int)LandingX() + 8 : 130;
-                if (x + width > WorldWidth - 8) x = (int)LandingX() - width - 8;
-                x = Math.Max(8, Math.Min((int)WorldWidth - width - 8, x));
-                int y = ground - 29;
+                GraphicsState resultState = g.Save();
+                g.ResetTransform();
+                int width = Math.Max(PixelArt.Width(label), PixelArt.Width(points)) + 8;
+                int landing = (int)Math.Round(LandingX() * GameScale);
+                int x = session.LastHit.Hit ? landing + 6 : hudX;
+                if (x + width > ClientSize.Width - 6) x = landing - width - 6;
+                x = Math.Max(6, Math.Min(ClientSize.Width - width - 6, x));
+                int y = hudBottom - 23;
                 // Short hits can land over the HUD; keep their result immediately above it.
-                if (x < 354 && x + width > 130) y = ground - 47;
-                Box(g, x, y, width, 28, ink);
-                PixelArt.Text(g, label, session.LastHit.Hit ? gold : Color.FromArgb(255, 135, 141), x + 6, y + 5);
-                PixelArt.Text(g, points, mint, x + 6, y + 17);
+                if (x < hudX + hudWidth && x + width > hudX) y = hudBottom - 43;
+                Box(g, x, y, width, 22, ink);
+                PixelArt.Text(g, label, session.LastHit.Hit ? gold : Color.FromArgb(255, 135, 141), x + 4, y + 3);
+                PixelArt.Text(g, points, mint, x + 4, y + 12);
+                g.Restore(resultState);
                 if (session.LastHit.Hit)
                     Box(g, (int)LandingX() - 2, ground - 5, 5, 5, gold);
             }
@@ -221,13 +234,18 @@ namespace TaskbarGames.Games.Baseball
             Box(g, x, top, 2, BaseballSession.FenceHeight, ink);
             Box(g, x + 16, top, 2, BaseballSession.FenceHeight, ink);
             Box(g, x - 1, top - 2, 20, 3, mint);
-            Box(g, x - 7, top - 14, 34, 10, ink);
-            PixelArt.Text(g, "130M", Color.WhiteSmoke, x - 2, top - 12);
+            GraphicsState labelState = g.Save();
+            g.ResetTransform();
+            int labelX = (int)Math.Round((x + 9) * GameScale);
+            int labelY = (int)Math.Round(top * GameScale);
+            Box(g, labelX - 15, labelY - 14, 30, 11, ink);
+            PixelArt.Text(g, "130M", Color.WhiteSmoke, labelX - 11, labelY - 12);
             if (session.Phase == BaseballPhase.Flight && session.HomeRunVisible)
             {
-                Box(g, x - 25, top - 31, 60, 13, ink);
-                PixelArt.Text(g, "HOME RUN", mint, x - 18, top - 28);
+                Box(g, labelX - 28, labelY - 28, 56, 12, ink);
+                PixelArt.Text(g, "HOME RUN", mint, labelX - 23, labelY - 25);
             }
+            g.Restore(labelState);
         }
 
         void DrawPitchingArm(Graphics g)

@@ -12,6 +12,11 @@ public static class LauncherRegressionTests
     sealed class HiddenLauncher : LauncherForm
     {
         public bool RequestedVisible;
+        public bool PressEscape()
+        {
+            Message message = Message.Create(Handle, 0x100, (IntPtr)Keys.Escape, IntPtr.Zero);
+            return ProcessCmdKey(ref message, Keys.Escape);
+        }
         protected override void SetVisibleCore(bool value) { RequestedVisible = value; base.SetVisibleCore(false); }
     }
     sealed class HiddenGame : Form
@@ -32,7 +37,8 @@ public static class LauncherRegressionTests
         {
             IntPtr handle = launcher.Handle;
             Rectangle work = Screen.PrimaryScreen.WorkingArea;
-            Assert(launcher.ClientSize == new Size(68, 36) && launcher.Right == work.Right - 8 && launcher.Bottom == work.Bottom - 8,
+            Assert(launcher.Controls.Count == 4 && launcher.Controls["ExitButton"] != null, "Launcher must offer three games and exit.");
+            Assert(launcher.ClientSize == new Size(68, 68) && launcher.Right == work.Right - 8 && launcher.Bottom == work.Bottom - 8,
                 "Compact launcher is not anchored above the taskbar's right edge: size=" + launcher.ClientSize + ", bounds=" + launcher.Bounds + ", work=" + work);
             using (Bitmap preview = new Bitmap(launcher.ClientSize.Width, launcher.ClientSize.Height))
             {
@@ -64,6 +70,19 @@ public static class LauncherRegressionTests
             launcher.Close();
             Assert(second.IsDisposed && launcher.IsDisposed, "Application shutdown left game alive.");
         }
-        Console.WriteLine("PASS: single active game, launcher hide/return, reselection and application shutdown; launcher preview rendered.");
+        using (HiddenLauncher launcher = new HiddenLauncher())
+        {
+            IntPtr handle = launcher.Handle;
+            launcher.ActiveControl = launcher.Controls[0];
+            Assert(launcher.PressEscape() && launcher.IsDisposed, "Escape with a selected game button must close launcher.");
+        }
+        using (HiddenLauncher launcher = new HiddenLauncher())
+        {
+            IntPtr handle = launcher.Handle;
+            Control exit = launcher.Controls["ExitButton"];
+            typeof(Control).GetMethod("OnClick", Private).Invoke(exit, new object[] { EventArgs.Empty });
+            Assert(launcher.IsDisposed, "Exit button must close launcher.");
+        }
+        Console.WriteLine("PASS: single active game, launcher hide/return, reselection, exit button and Escape shutdown; launcher preview rendered.");
     }
 }

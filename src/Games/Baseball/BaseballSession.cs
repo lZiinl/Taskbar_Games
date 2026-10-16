@@ -19,8 +19,8 @@ namespace TaskbarGames.Games.Baseball
     {
         public const double MinPitchSeconds = 1.05;
         public const double MaxPitchSeconds = 1.65;
-        public const double SwingContactDelay = 0.14;
-        public const double SwingDuration = 0.72;
+        public const double SwingContactDelay = 0.08;
+        public const double SwingDuration = 0.46;
         public const double HitWindow = 0.12;
         public const double ReadySeconds = 0.85;
         public const double ResultSeconds = 1.4;

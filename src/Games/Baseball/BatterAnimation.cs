@@ -21,12 +21,12 @@ namespace TaskbarGames.Games.Baseball
 
         static readonly Pose[] Poses = {
             new Pose(0,     65, 66, -37, -115, 0),
-            new Pose(0.04,  64, 63, -38, -130, 0),
-            new Pose(0.09,  65, 65, -34, -155, 0.35f),
+            new Pose(0.02,  64, 63, -38, -130, 0),
+            new Pose(0.045, 65, 65, -34, -155, 0.35f),
             new Pose(BaseballSession.SwingContactDelay, 68, 78, -30, 0, 0.75f),
-            new Pose(0.22,  70, 85, -34, -25, 1),
-            new Pose(0.34,  70, 76, -43, -125, 1),
-            new Pose(0.49,  70, 70, -42, -165, 1),
+            new Pose(0.13,  70, 85, -34, -25, 1),
+            new Pose(0.22,  70, 76, -43, -125, 1),
+            new Pose(0.32,  70, 70, -42, -165, 1),
             new Pose(BaseballSession.SwingDuration, 65, 66, -37, -115, 0)
         };
         static readonly string[] Head = {
@@ -108,7 +108,7 @@ namespace TaskbarGames.Games.Baseball
             PixelArt.Sprite(g, Head, 57 + (int)Math.Round((p.Shoulder - 65) * 0.3), ground - 49, Blue);
 
             PointF hands = new PointF(p.HandX, ground + p.HandY);
-            float extending = age >= BaseballSession.SwingContactDelay && age < 0.3 ? 1 : 0;
+            float extending = age >= BaseballSession.SwingContactDelay && age < 0.2 ? 1 : 0;
             PointF backShoulder = new PointF(p.Shoulder - 7, ground - 32);
             PointF backElbow = new PointF(Lerp(p.Shoulder - 9, p.HandX - 9, p.Turn), ground - 25 - extending * 3);
             PointF frontShoulder = new PointF(p.Shoulder + 5, ground - 33);
