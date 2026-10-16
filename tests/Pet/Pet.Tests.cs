@@ -140,6 +140,39 @@ public static class PetRegressionTests
             for (int i = 0; i < 50 && state.Meals == 1; i++) step.Invoke(pet, new object[] { 0.1 });
             Assert(state.Meals == 2 && pet.Left == area.Left, "Native pet window must reach and eat left-edge acorn.");
         }
+        // 점프는 먹이 추적과 함께 진행되며 공중 섭취·키 자동 반복·포커스 밖 입력은 막는다.
+        using (PetGame pet = (PetGame)Activator.CreateInstance(typeof(PetGame), flags, null, new object[] { false }, null))
+        {
+            IntPtr handle = pet.Handle;
+            MethodInfo key = typeof(PetGame).GetMethod("OnPetKeyDown", flags);
+            MethodInfo step = typeof(PetGame).GetMethod("AdvanceBehavior", flags);
+            FieldInfo age = typeof(PetGame).GetField("jumpAge", flags);
+            FieldInfo held = typeof(PetGame).GetField("jumpHeld", flags);
+            FieldInfo focus = typeof(PetGame).GetField("focused", flags);
+            focus.SetValue(pet, false);
+            key.Invoke(pet, new object[] { pet, new KeyEventArgs(Keys.Space) });
+            Assert((double)age.GetValue(pet) < 0, "Inactive pet must not jump.");
+            focus.SetValue(pet, true); held.SetValue(pet, false);
+            double center = (double)typeof(PetGame).GetField("x", flags).GetValue(pet) + 38;
+            typeof(PetGame).GetMethod("SetFoodTarget", flags).Invoke(pet, new object[] { center });
+            key.Invoke(pet, new object[] { pet, new KeyEventArgs(Keys.Space) });
+            step.Invoke(pet, new object[] { 0.25 });
+            PetSession state = (PetSession)typeof(PetGame).GetField("session", flags).GetValue(pet);
+            Assert(pet.Bottom <= Screen.PrimaryScreen.WorkingArea.Bottom - 29 && state.Meals == 0,
+                "Jump should lift pet without eating food in midair.");
+            key.Invoke(pet, new object[] { pet, new KeyEventArgs(Keys.Space) });
+            Assert((double)age.GetValue(pet) == 0.25, "Held Space must not restart jump.");
+            step.Invoke(pet, new object[] { 0.31 });
+            Assert((double)age.GetValue(pet) < 0 && pet.Bottom == Screen.PrimaryScreen.WorkingArea.Bottom && state.Meals == 1,
+                "Pet should land and then eat the waiting acorn.");
+            typeof(PetGame).GetField("action", flags).SetValue(pet, "idle");
+            held.SetValue(pet, false);
+            key.Invoke(pet, new object[] { pet, new KeyEventArgs(Keys.Space) });
+            step.Invoke(pet, new object[] { 0.1 });
+            typeof(Form).GetMethod("OnDeactivate", flags).Invoke(pet, new object[] { EventArgs.Empty });
+            Assert((double)age.GetValue(pet) < 0 && pet.Bottom == Screen.PrimaryScreen.WorkingArea.Bottom,
+                "Focus loss must return pet safely to the ground.");
+        }
         // 작은 도토리 표시 창도 실제 핸들을 생성하여 네이티브 크기가 의도한 16×16인지 검사한다.
         Type markerType = typeof(PetGame).Assembly.GetType("TaskbarGames.Games.Pet.AcornMarker");
         using (Form marker = (Form)Activator.CreateInstance(markerType))

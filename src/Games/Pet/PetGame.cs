@@ -35,6 +35,11 @@ namespace TaskbarGames.Games.Pet
         // 사용자가 시작한 쓰다듬기/낮잠을 먹이 추적보다 우선시키는 상태다.
         // 단순히 action만 바꾸면 다음 틱에 먹이 추적이 덮어쓰므로 별도 플래그가 필요하다.
         bool attendingCare;
+        // 점프는 산책/먹이 추적과 별도로 진행한다. -1은 지상, 그 외는 점프 경과 초다.
+        double jumpAge = -1;
+        bool jumpHeld, focused;
+        const double JumpDuration = 0.55;
+        double JumpHeight { get { return jumpAge < 0 ? 0 : Math.Max(0, 220 * jumpAge - 400 * jumpAge * jumpAge); } }
         const int MaxAcorns = 5;
         int direction = 1;
         bool menuOpen;
@@ -85,12 +90,20 @@ namespace TaskbarGames.Games.Pet
             }
             menu.Opening += delegate { menuOpen = true; UpdateStatus(); };
             menu.Closed += delegate { menuOpen = false; lastTime = clock.Elapsed.TotalSeconds; };
-            hint.SetToolTip(this, "다람쥐 · 클릭해서 쓰다듬기 · 우클릭으로 먹이와 낮잠");
+            hint.SetToolTip(this, "다람쥐 · 클릭해서 쓰다듬기 · SPACE 점프 · 우클릭으로 먹이와 낮잠");
             MouseDown += delegate(object sender, MouseEventArgs e) {
                 if (e.Button == MouseButtons.Left) Stroke();
                 else if (e.Button == MouseButtons.Right) menu.Show(this, e.Location);
             };
-            KeyDown += delegate(object sender, KeyEventArgs e) { if (e.KeyCode == Keys.Escape) Close(); };
+            Activated += delegate { focused = true; jumpHeld = KeyboardState.SpaceDown; };
+            Deactivate += delegate {
+                focused = false; jumpHeld = true; jumpAge = -1;
+                PositionPet(); Invalidate();
+            };
+            KeyDown += OnPetKeyDown;
+            KeyUp += delegate(object sender, KeyEventArgs e) {
+                if (e.KeyCode == Keys.Space) { jumpHeld = false; e.Handled = e.SuppressKeyPress = true; }
+            };
             timer.Interval = 40;
             timer.Tick += Tick;
             timer.Start();
@@ -104,6 +117,21 @@ namespace TaskbarGames.Games.Pet
             status.ToolTipText = status.AccessibleName = status.Text;
             menu.Items[1].Enabled = food.Count < MaxAcorns;
             menu.Items[1].ToolTipText = food.Count >= MaxAcorns ? "도토리는 최대 5개까지 놓을 수 있어요" : "도토리 놓기 (" + food.Count + "/5)";
+        }
+        // 자동 반복 입력은 한 번의 누름으로 처리하고 다른 앱의 스페이스는 받지 않는다.
+        void OnPetKeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.KeyCode == Keys.Escape) { Close(); return; }
+            if (e.KeyCode != Keys.Space) return;
+            e.Handled = e.SuppressKeyPress = true;
+            if (!focused || jumpHeld) return;
+            jumpHeld = true;
+            if (jumpAge >= 0 || action == "eat" || placingFood || menuOpen) return;
+            if (action == "sleep") { action = "idle"; remaining = 120; attendingCare = false; }
+            jumpAge = 0;
+            lastTime = clock.Elapsed.TotalSeconds;
+            timer.Interval = 16;
+            Invalidate();
         }
         // 18×18 투명 비트맵에 직접 픽셀 아이콘을 그린다. 반환 이미지의 소유권은 메뉴에 둔다.
         // 게임 Dispose에서 메뉴 항목별 Image를 직접 반환한다.
@@ -198,7 +226,8 @@ namespace TaskbarGames.Games.Pet
         {
             Rectangle area = Screen.PrimaryScreen.WorkingArea;
             x = Math.Max(area.Left, Math.Min(Math.Max(area.Left, area.Right - Width), x));
-            Location = new Point((int)x, area.Bottom - Height);
+            // 작은 투명 창 자체를 위로 옮겨 그림이 창 위쪽에서 잘리지 않게 한다.
+            Location = new Point((int)x, area.Bottom - Height - (int)Math.Round(JumpHeight));
         }
         // 타이머 지연이 큰 경우 한 번에 최대 0.25초만 반영한다. 메뉴가 열렸으면 상태/행동 모두 멈춘다.
         // 상태 감소 → 행동 이동 → 60초 자동 저장 → 다시 그리기 순서이며 낮잠은 250ms로 갱신한다.
@@ -210,7 +239,7 @@ namespace TaskbarGames.Games.Pet
             session.Advance(dt); saveAge += dt;
             AdvanceBehavior(dt);
             if (saveAge >= 60) { SaveState(); saveAge = 0; }
-            timer.Interval = action == "sleep" ? 250 : 40;
+            timer.Interval = jumpAge >= 0 ? 16 : action == "sleep" ? 250 : 40;
             Invalidate();
         }
         // 행동 우선순위: 사용자 돌봄 유지 → 섭취 동작 유지 → 가까운 먹이 추적 → 자율 산책/휴식.
@@ -218,6 +247,8 @@ namespace TaskbarGames.Games.Pet
         internal void AdvanceBehavior(double dt)
         {
             if (dt <= 0 || Double.IsNaN(dt) || Double.IsInfinity(dt)) return;
+            // 포물선의 닫힌 식을 써 프레임 간격에 관계없이 약 30px 높이에서 0.55초 만에 착지한다.
+            if (jumpAge >= 0) { jumpAge += dt; if (jumpAge >= JumpDuration) jumpAge = -1; }
             remaining -= dt;
             PositionFood();
             if (attendingCare && remaining > 0) { PositionPet(); return; }
@@ -236,7 +267,7 @@ namespace TaskbarGames.Games.Pet
                 double travel = Math.Min(Math.Abs(distance), 36 * dt);
                 x += Math.Sign(distance) * travel;
                 action = "walk";
-                if (Math.Abs(destination - x) < 0.1)
+                if (Math.Abs(destination - x) < 0.1 && jumpAge < 0)
                 {
                     // 도착한 먹이만 목록/표시 창에서 제거한다. 보상은 이 지점에서 한 번만 주고 6초 섭취 동작을 시작한다.
                     food.Remove(nearest);
@@ -360,7 +391,7 @@ namespace TaskbarGames.Games.Pet
         {
             base.OnPaint(e);
             double time = clock.Elapsed.TotalSeconds;
-            DrawSquirrel(e.Graphics, 22, 27, direction > 0, action, time, 1);
+            DrawSquirrel(e.Graphics, 22, 27, direction > 0, jumpAge >= 0 ? "jump" : action, time, 1);
             if (action == "love")
             {
                 int rise = (int)((4 - remaining) * 2.5);
