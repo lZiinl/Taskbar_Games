@@ -1,3 +1,6 @@
+﻿// 포트리스의 입력·탄도 진행·명중 판정·픽셀 효과·색상 저장을 담당한다.
+// 게임 논리 좌표는 화면 픽셀을 GameScale로 나눈 값이며, 픽셀 글꼴은 화면 정수 좌표로 따로 그린다.
+
 using System;
 using System.Diagnostics;
 using System.Collections.Generic;
@@ -21,6 +24,7 @@ namespace TaskbarGames.Games.Fortress
         Color tankBase = Color.FromArgb(93, 184, 106);
         Color tankLight = Color.FromArgb(184, 246, 153);
         Color tankShadow = Color.FromArgb(48, 105, 79);
+        // 색상 선택 중 입력/진행을 막는 플래그. waitForSpaceRelease는 포커스 복귀 시 키 떼기를 요구한다.
         bool choosingColor;
         bool waitForSpaceRelease;
         float WorldWidth { get { return ClientSize.Width / GameScale; } }
@@ -29,6 +33,7 @@ namespace TaskbarGames.Games.Fortress
         readonly Random random = new Random();
         readonly Color ink = ArcadeTheme.Black;
         readonly Color green = ArcadeTheme.Neon;
+        // 탱크 문자 스프라이트. DrawPixelSprite에서 색상 코드별로 기본색·명암·윤곽을 해석한다.
         static readonly string[] TankPixels = {
             "....................",
             "....................",
@@ -44,6 +49,7 @@ namespace TaskbarGames.Games.Fortress
             "DWWDWWDWWDWWDWWDWWDD",
             ".DDDDDDDDDDDDDDDDDD."
         };
+        // 과녁 스프라이트. 명중 결과 표시 동안 숨기고 파편으로 대체한다.
         static readonly string[] TargetPixels = {
             "....DDDD....",
             "..DDRRRRDD..",
@@ -58,13 +64,17 @@ namespace TaskbarGames.Games.Fortress
             "..DDRRRRDD..",
             "DDDDDDDDDDDD"
         };
+        // HUD 논리 영역과 포구/포탄/과녁 좌표. 지면 역시 논리 Y값이다.
         Rectangle panel;
         PointF muzzle, projectile;
         float ground, targetX;
+        // lastTime/resultUntil은 Stopwatch 기준 초, flightTime은 이번 발사 후 초다.
+        // charge는 0~1, speed와 shotGravity는 해당 발사 거리에서 역산한 값이다.
         double lastTime, flightTime, speed, charge, resultUntil, shotGravity;
         bool charging, flying, focused, wasHit;
         string result = "";
         int hits, shots, combo;
+        // 명중 파편 하나의 위치·속도·크기·수명·색상. 게임 판정과 무관한 장식 효과다.
         sealed class Debris
         {
             public float X, Y, VX, VY, Size;
@@ -75,12 +85,15 @@ namespace TaskbarGames.Games.Fortress
         // Cosmetic randomness must not change the sequence of target positions.
         readonly Random effectRandom = new Random();
 
+        // 실행 시에는 사용자 색상 설정을 읽는 생성자로 연결한다.
         public FortressGame()
             : this(true)
         {
         }
 
         // Tests can exercise a real form without reading or migrating user settings.
+        // 테스트에서는 false로 레지스트리/레거시 파일 접근을 피한다.
+        // 투명 창·입력·포커스 전환·타이머를 구성하며 포커스를 잃으면 충전 상태를 버린다.
         internal FortressGame(bool loadSettings)
         {
             Text = "Taskbar_Games - Fortress";
@@ -116,6 +129,8 @@ namespace TaskbarGames.Games.Fortress
             timer.Start();
         }
 
+        // 작업 영역을 재계산하고 진행 중인 충전/발사/파편/결과를 취소한다.
+        // 기존 화면 좌표를 새 해상도에서 재사용하지 않도록 포구와 과녁도 다시 설정한다.
         void ResetLayout()
         {
             Bounds = Screen.PrimaryScreen.WorkingArea;
@@ -130,6 +145,8 @@ namespace TaskbarGames.Games.Fortress
             NewTarget();
         }
 
+        // 탱크 이후 가용 폭의 10~80% 구간에서 생성하되 HUD 오른쪽 최소 여백을 우선한다.
+        // 좁은 화면에서도 Random 범위가 음수가 되지 않도록 오른쪽 끝을 왼쪽 이상으로 보정한다.
         void NewTarget()
         {
             float span = WorldWidth - TankOriginX;
@@ -138,16 +155,20 @@ namespace TaskbarGames.Games.Fortress
             targetX = left + (float)random.NextDouble() * (right - left);
         }
 
+        // 표시할 숫자 자릿수에 맞춰 점수판 너비를 산정한다. 글자 폭과 닫기 영역 여백을 합친다.
         static int ScorePanelWidth(int hitCount, int shotCount)
         {
             return (int)Math.Ceiling(TextWidth(String.Format("{0} HIT / {1} SHOTS", hitCount, shotCount), 1)) + 36;
         }
 
+        // 현재 명중/발사 횟수로 점수판 폭을 갱신한다. 과녁 배치 보정은 별도 함수에서 처리한다.
         void UpdatePanelLayout()
         {
             panel.Width = ScorePanelWidth(hits, shots);
         }
 
+        // 다음 발사·명중으로 숫자 자릿수가 늘어날 때의 HUD 폭까지 미리 확보한다.
+        // 조준 후 점수판 확장 때문에 과녁이 갑자기 움직이거나 가려지지 않게 한다.
         float MinimumTargetX()
         {
             // Reserve the next shot's digits before aiming. The sprite is 24 device
@@ -156,6 +177,8 @@ namespace TaskbarGames.Games.Fortress
             return Math.Max(panel.Right, nextPanelRight) + (12 + 8) / GameScale;
         }
 
+        // 움직이는 충전/포탄/파편은 16ms, 정적인 상태는 최대 250ms로 간격을 늘린다.
+        // 결과 문구의 만료가 더 가까우면 그 시각에 맞춰 깨어나게 한다.
         void UpdateTimerInterval(double now)
         {
             bool animating = (charging && charge < 1) || flying || debris.Count > 0;
@@ -166,6 +189,8 @@ namespace TaskbarGames.Games.Fortress
                 : 250;
         }
 
+        // 화면 좌표를 논리 좌표로 바꿔 탱크 우클릭 영역과 종료 영역을 검사한다.
+        // 일반 왼쪽 클릭은 조작 포커스만 주며 직접 발사하지 않는다.
         void OnMouse(object sender, MouseEventArgs e)
         {
             PointF worldMouse = new PointF(e.X / GameScale, e.Y / GameScale);
@@ -181,6 +206,8 @@ namespace TaskbarGames.Games.Fortress
             Focus();
         }
 
+        // 색상 선택 중에는 입력을 무시한다. Space의 첫 눌림은 대기 상태에서만 충전을 시작한다.
+        // 키 반복·포커스 복귀 잠금·비행 중 재발사를 모두 차단한다.
         void OnKeyDown(object sender, KeyEventArgs e)
         {
             if (choosingColor) return;
@@ -199,6 +226,8 @@ namespace TaskbarGames.Games.Fortress
             }
         }
 
+        // 키를 떼면 잠금을 풀고, 충전 중이었다면 0~1 힘을 가용 사거리로 변환한다.
+        // 같은 거리에서 속력과 중력을 함께 계산해 포구 높이를 포함한 착지점을 유지한다.
         void OnKeyUp(object sender, KeyEventArgs e)
         {
             if (e.KeyCode != Keys.Space) return;
@@ -221,6 +250,8 @@ namespace TaskbarGames.Games.Fortress
             Invalidate();
         }
 
+        // 최대 0.05초 단위로 시간 진행을 제한하고 충전·탄도·파편·결과 만료를 갱신한다.
+        // 변화가 없는 대기는 Invalidate를 호출하지 않아 정적인 화면의 CPU 사용을 줄인다.
         void Tick(object sender, EventArgs e)
         {
             double now = clock.Elapsed.TotalSeconds;
@@ -237,6 +268,7 @@ namespace TaskbarGames.Games.Fortress
             {
                 changed = true;
                 // Small physics steps prevent a fast shell from skipping the target.
+                // 한 틱도 약 4ms 이하로 쪼개 검사해 고속 포탄이 과녁을 지나쳐 명중을 놓치는 것을 줄인다.
                 int steps = Math.Max(1, (int)Math.Ceiling(dt / 0.004));
                 for (int i = 0; i < steps && flying; i++)
                 {
@@ -259,6 +291,8 @@ namespace TaskbarGames.Games.Fortress
             if (changed) Invalidate();
         }
 
+        // 비행을 멈추고 명중이면 횟수/콤보/파편을 갱신한다. 빗나가면 콤보만 초기화한다.
+        // 결과를 1.2초 유지한 뒤 명중한 경우에만 새로운 과녁을 만든다.
         void Finish(bool hit, double now)
         {
             flying = false;
@@ -275,6 +309,7 @@ namespace TaskbarGames.Games.Fortress
             resultUntil = now + 1.2;
         }
 
+        // 과녁 주변에 28개 파편을 만든다. 별도 effectRandom을 써 장식 난수가 다음 과녁 위치를 바꾸지 않게 한다.
         void BurstTarget()
         {
             debris.Clear();
@@ -292,6 +327,8 @@ namespace TaskbarGames.Games.Fortress
                 });
         }
 
+        // 파편에 중력을 적용하고 수명 종료 또는 지면 도착 시 제거한다.
+        // 뒤에서부터 순회해 삭제로 인한 인덱스 이동이 다음 항목을 건너뛰지 않게 한다.
         void UpdateDebris(double dt)
         {
             for (int i = debris.Count - 1; i >= 0; i--)
@@ -305,6 +342,8 @@ namespace TaskbarGames.Games.Fortress
             }
         }
 
+        // 점수판·충전 게이지·입력 안내·탱크·과녁·파편·포탄·결과 순으로 표시한다.
+        // 포탄 잔상은 과거 탄도 시각을 다시 계산하여 현재 포탄과 같은 궤적을 따른다.
         protected override void OnPaint(PaintEventArgs e)
         {
             base.OnPaint(e);
@@ -388,11 +427,14 @@ namespace TaskbarGames.Games.Fortress
             {'%', "191A0204080B13"}
         };
 
+        // 실제 글자 픽셀 폭을 논리 좌표로 되돌려 HUD/결과 배치 계산과 맞춘다.
         static float TextWidth(string text, int pixel)
         {
             return Math.Max(0, text.Length * 6 - 1) * pixel / GameScale;
         }
 
+        // 축소 변환을 잠시 해제하고 각 경계를 실제 정수 픽셀로 반올림한다.
+        // 작은 도형의 흐림과 투명색 가장자리 번짐을 피하고 최소 1픽셀은 보장한다.
         static void PixelRect(Graphics g, Color color, float x, float y, float width, float height)
         {
             GraphicsState state = g.Save();
@@ -403,6 +445,8 @@ namespace TaskbarGames.Games.Fortress
             g.Restore(state);
         }
 
+        // 글자의 시작점만 논리→화면 좌표로 변환하고 획은 정수 픽셀 크기로 찍는다.
+        // HUD·HIT/MISS는 pixel=1을 써 다른 게임 안내와 같은 글자 높이를 유지한다.
         static void DrawPixelText(Graphics g, string text, int pixel, Color color, float x, float y)
         {
             GraphicsState state = g.Save();
@@ -425,6 +469,8 @@ namespace TaskbarGames.Games.Fortress
             g.Restore(state);
         }
 
+        // 중앙 X와 발바닥 Y를 기준으로 그림을 배치한다. 실제 도트는 2×2 화면 픽셀이다.
+        // 색상 변경은 탱크 기본색/명암에만 반영하고 과녁의 색 코드는 고정한다.
         void DrawPixelSprite(Graphics g, string[] rows, float centerX, float bottom)
         {
             // Draw on whole device pixels to avoid blurred edges and transparency-key halos.
@@ -456,6 +502,8 @@ namespace TaskbarGames.Games.Fortress
             g.Restore(state);
         }
 
+        // 폼의 투명색인 순수 마젠타가 선택되어 탱크가 사라지지 않도록 G를 1로 보정한다.
+        // 알파값도 255로 정규화한다.
         static Color OpaqueTankColor(Color color)
         {
             // Pure magenta is the window's transparency key, so keep it visible.
@@ -463,6 +511,7 @@ namespace TaskbarGames.Games.Fortress
                 ? Color.FromArgb(255, 1, 255) : Color.FromArgb(color.R, color.G, color.B);
         }
 
+        // 선택한 기본색에서 밝은 색과 어두운 색을 파생해 입체감을 유지한다.
         void SetTankColor(Color color)
         {
             tankBase = OpaqueTankColor(color);
@@ -473,6 +522,9 @@ namespace TaskbarGames.Games.Fortress
             tankShadow = Color.FromArgb(tankBase.R * 3 / 5, tankBase.G * 3 / 5, tankBase.B * 3 / 5);
         }
 
+        // 레지스트리의 유효한 24비트 RGB를 우선 사용한다.
+        // 옛 tank-color.txt는 유효한 값만 이전하며 새 저장이 성공해야 파일을 삭제한다.
+        // 읽기·권한 오류는 게임 시작을 막지 않고 기본색을 유지한다.
         void LoadTankColor()
         {
             bool loaded = false;
@@ -514,6 +566,8 @@ namespace TaskbarGames.Games.Fortress
             catch (System.Security.SecurityException) { }
         }
 
+        // 현재 사용자 레지스트리에 RGB만 DWORD로 기록하고 Flush한다.
+        // 오류는 호출자에게 전달해 화면에서 저장 실패를 알릴 수 있게 한다.
         void SaveTankColor()
         {
             using (RegistryKey key = Registry.CurrentUser.CreateSubKey(SettingsKey))
@@ -524,6 +578,8 @@ namespace TaskbarGames.Games.Fortress
             }
         }
 
+        // 충전을 취소하고 타이머를 멈춘 뒤 12색 모달 팔레트를 연다.
+        // finally에서 경과한 대화상자 시간을 결과 만료 시각에 더해 게임 시간의 일관성을 유지한다.
         void ChooseTankColor()
         {
             if (choosingColor) return;
@@ -562,12 +618,14 @@ namespace TaskbarGames.Games.Fortress
             }
         }
 
+        // 색상은 이미 화면에 적용되었지만 다음 실행까지 유지되지 않을 수 있음을 구분해 알린다.
         void ShowColorSaveError()
         {
             MessageBox.Show(this, "색상은 적용했지만 Windows 사용자 설정에 저장하지 못했습니다. 다음 실행에는 유지되지 않을 수 있습니다.",
                 "Fortress", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
 
+        // 폼이 닫힌 뒤에도 틱이 남지 않도록 타이머를 반환한다.
         protected override void Dispose(bool disposing)
         {
             if (disposing) timer.Dispose();

@@ -1,3 +1,6 @@
+﻿// 포트리스 창의 실제 배치와 입력/갱신 동작을 확인하는 회귀 테스트.
+// 테스트용 생성자는 사용자 색상 설정을 읽거나 이전하지 않는다.
+
 using System;
 using System.Drawing;
 using System.Drawing.Imaging;
@@ -12,31 +15,38 @@ public static class FortressRegressionTests
     const BindingFlags Private = BindingFlags.Instance | BindingFlags.NonPublic;
     static readonly Type GameType = typeof(FortressGame);
 
+    // 매번 가능한 가장 왼쪽 과녁을 만들어 점수판과의 최소 여백이라는 최악 조건을 재현한다.
     sealed class LeftmostRandom : Random
     {
+        // 난수 범위의 하한을 고정하여 배치 검증을 결정적으로 만든다.
         public override double NextDouble() { return 0; }
     }
 
+    // 검증에 필요한 내부 필드를 읽는다. 운영 코드에 테스트 전용 공개 속성을 추가하지 않는다.
     static object Get(FortressGame game, string name)
     {
         return GameType.GetField(name, Private).GetValue(game);
     }
 
+    // 해상도·점수·시간 등의 경계 조건을 직접 구성하는 테스트 도우미다.
     static void Set(FortressGame game, string name, object value)
     {
         GameType.GetField(name, Private).SetValue(game, value);
     }
 
+    // 대상 클래스에 직접 선언된 비공개 메서드를 찾아 호출한다.
     static void Call(FortressGame game, string name, params object[] args)
     {
         GameType.GetMethod(name, Private | BindingFlags.DeclaredOnly).Invoke(game, args);
     }
 
+    // 잘못된 상태를 예외로 알린다. 테스트 스크립트의 ErrorActionPreference=Stop과 함께 실패를 전달한다.
     static void Assert(bool condition, string message)
     {
         if (!condition) throw new Exception(message);
     }
 
+    // 논리 좌표를 실제 0.6배 화면 좌표로 변환해 과녁 외곽과 HUD 사이 여백을 검사한다.
     static void AssertClear(FortressGame game)
     {
         Rectangle panel = (Rectangle)Get(game, "panel");
@@ -46,6 +56,7 @@ public static class FortressRegressionTests
         Assert((float)Get(game, "targetX") * 0.6 + 12 <= game.ClientSize.Width, "Target leaves screen.");
     }
 
+    // 실제 폼 렌더러를 사용하고 하단 일부를 PNG로 저장한다. 일반 데스크톱 캡처를 필요로 하지 않는다.
     static void Render(FortressGame game, string path)
     {
         using (Bitmap bitmap = new Bitmap(game.ClientSize.Width, game.ClientSize.Height))
@@ -58,6 +69,8 @@ public static class FortressRegressionTests
         }
     }
 
+    // 6개 화면 폭과 5개 점수 자릿수에서 배치를 확인한다.
+    // 대기 중 불필요한 재그리기, 충전·발사·파편·결과 전환 및 포커스 변화를 함께 검증한다.
     public static void Run(string artifacts)
     {
         Directory.CreateDirectory(artifacts);

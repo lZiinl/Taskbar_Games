@@ -1,3 +1,6 @@
+﻿// 하체는 고정하고 상체·팔·배트만 키프레임 보간하는 픽셀 타자 애니메이션.
+// 규칙 모델의 SwingContactDelay/SwingDuration을 공유해 시각적 타격과 판정 시점을 맞춘다.
+
 using System;
 using System.Drawing;
 using TaskbarGames.Shared;
@@ -8,10 +11,13 @@ namespace TaskbarGames.Games.Baseball
     // Motion reference: MLB Network's Rhys Hoskins swing analysis (2019-04-10).
     internal static class BatterAnimation
     {
+        // 키프레임 하나. Time은 초, HandY는 지면 기준 상대 높이, BatAngle은 도 단위다.
+        // Turn은 몸통 회전 정도를 나타내는 연출용 보간 값이다.
         sealed class Pose
         {
             public double Time;
             public float Shoulder, HandX, HandY, BatAngle, Turn;
+            // 관절·회전 값을 묶어 저장한다. 보간 중에도 같은 구조를 만들어 Draw에 전달한다.
             public Pose(double time, float shoulder, float handX, float handY, float angle, float turn)
             {
                 Time = time; Shoulder = shoulder; HandX = handX; HandY = handY;
@@ -19,6 +25,8 @@ namespace TaskbarGames.Games.Baseball
             }
         }
 
+        // 준비 → 뒤로 당기기 → 가속 → 접촉 → 팔로스루 → 복귀 순서다.
+        // 키프레임 시간은 반드시 증가해야 하며, 접촉 프레임은 모델 상수를 사용한다.
         static readonly Pose[] Poses = {
             new Pose(0,     65, 66, -37, -115, 0),
             new Pose(0.02,  64, 63, -38, -130, 0),
@@ -39,8 +47,11 @@ namespace TaskbarGames.Games.Baseball
         static readonly Color Skin = Color.FromArgb(246, 194, 144);
         static readonly Color Pants = Color.FromArgb(233, 239, 247);
 
+        // 두 스칼라 값을 t 비율로 선형 보간한다. 곡선형 시간 보정은 At에서 먼저 적용한다.
         static float Lerp(float a, float b, float t) { return a + (b - a) * t; }
 
+        // 음수 또는 종료 이후는 기본 자세다. 현재 시각을 둘러싼 두 키프레임을 찾아 보간한다.
+        // smoothstep(t²(3-2t))을 적용해 각 구간 시작·끝에서 움직임이 급하게 꺾이는 것을 줄인다.
         static Pose At(double age)
         {
             if (age < 0 || age >= BaseballSession.SwingDuration) return Poses[0];
@@ -57,6 +68,8 @@ namespace TaskbarGames.Games.Baseball
             return Poses[0];
         }
 
+        // 선분을 작은 정사각형 연속으로 찍어 픽셀 선을 만든다.
+        // 좌표를 2픽셀 단위로 반올림하여 일반 안티앨리어싱 선 대신 일관된 도트 질감을 유지한다.
         static void Stroke(Graphics g, Color color, int width, params PointF[] points)
         {
             using (SolidBrush brush = new SolidBrush(color))
@@ -74,12 +87,15 @@ namespace TaskbarGames.Games.Baseball
                 }
         }
 
+        // 조금 두꺼운 어두운 선을 먼저 그리고 안쪽 색 선을 겹쳐 팔다리 윤곽을 만든다.
         static void Limb(Graphics g, Color color, int width, params PointF[] points)
         {
             Stroke(g, Ink, width + 2, points);
             Stroke(g, color, width, points);
         }
 
+        // 고관절·무릎·발목은 고정 좌표이며 상체만 현재 Pose에 따라 움직인다.
+        // 손에서 배트 각도 방향으로 길이 30의 끝점을 구하고 손잡이/배럴/글러브를 덧그린다.
         public static void Draw(Graphics g, int ground, double age)
         {
             Pose p = At(age);

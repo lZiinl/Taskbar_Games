@@ -1,3 +1,6 @@
+﻿// 야구의 입력·선수 그림·공 궤적·결과 UI를 담당한다. 규칙은 BaseballSession이 소유한다.
+// 선수와 필드는 0.65배 논리 좌표로 그리고, 점수/결과 글자는 실제 화면 픽셀로 그려 획을 유지한다.
+
 using System;
 using System.Diagnostics;
 using System.Drawing;
@@ -15,13 +18,16 @@ namespace TaskbarGames.Games.Baseball
         readonly Color ink = ArcadeTheme.Black;
         readonly Color mint = ArcadeTheme.Neon;
         readonly Color gold = Color.FromArgb(255, 233, 77);
+        // 배트와 공이 만나는 논리 X좌표. 투구의 목표점과 타구 거리 매핑의 시작점이 같다.
         const int ContactX = 108;
         const float GameScale = 0.65f;
         float WorldWidth { get { return ClientSize.Width / GameScale; } }
         int ground, pitcherX;
         Rectangle closeButton;
         double lastTime;
+        // 한 번 누른 키가 자동 반복으로 여러 스윙이 되지 않게 하는 입력 잠금이다.
         bool spaceHeld;
+        // 투수 기본 자세의 문자 스프라이트. 배색은 PixelArt.Sprite가 해석한다.
         static readonly string[] Pitcher = {
             ".......DDDDD........", "......DBBBBBD.......", "....DDDBBLLBBD......",
             "....DBBBBBBBBD......", "......DSSSSTD.......", ".....DSSD SSTD......",
@@ -32,6 +38,7 @@ namespace TaskbarGames.Games.Baseball
             "....DWWD...DWWD.....", "...DWWD.....DWWD....", "...DWWD......DWWD...",
             "..DWWWD......DWWD...", ".DDDDDD......DDDDD..", ".DDDDDD......DDDDDD."
         };
+        // 준비 중 특정 시간 구간에 표시하는 다리/몸통 자세. 팔은 별도 관절 그리기로 덧그린다.
         static readonly string[] PitcherWindup = {
             ".......DDDDD........", "......DBBBBBD.......", "....DDDBBLLBBD......",
             "....DBBBBBBBBD......", "......DSSSSTD.......", ".....DSSD SSTD......",
@@ -43,6 +50,8 @@ namespace TaskbarGames.Games.Baseball
             ".........DWWWD......", ".........DDDDDD.....", ".........DDDDDD....."
         };
 
+        // 투명 전체 작업 영역 창을 만들고 활성화/비활성화에 모델의 Active를 연결한다.
+        // 키를 누른 채 복귀한 경우 먼저 떼도록 하며 종료 버튼 판정은 화면 좌표를 논리 좌표로 바꿔 검사한다.
         public BaseballGame()
         {
             Text = "Taskbar_Games - Baseball";
@@ -85,6 +94,8 @@ namespace TaskbarGames.Games.Baseball
             timer.Start();
         }
 
+        // 작업 영역을 다시 읽고 논리 지면·투수 위치·초기 종료 버튼 위치를 설정한다.
+        // 화면 변경 중 진행되던 투구는 초기화하지만 모델의 누적 기록은 보존한다.
         void ResetLayout()
         {
             Bounds = Screen.PrimaryScreen.WorkingArea;
@@ -96,6 +107,8 @@ namespace TaskbarGames.Games.Baseball
             lastTime = clock.Elapsed.TotalSeconds;
         }
 
+        // Esc는 선택창 복귀, Space는 최초 눌림만 처리한다.
+        // 입력 직전까지의 경과 시간을 먼저 반영해야 타이머 프레임 사이에 들어온 입력도 실제 시각에 가깝게 판정된다.
         void OnGameKeyDown(object sender, KeyEventArgs e)
         {
             if (e.KeyCode == Keys.Escape) { Close(); return; }
@@ -110,6 +123,7 @@ namespace TaskbarGames.Games.Baseball
             UpdateTimer();
         }
 
+        // Stopwatch의 현재 값과 이전 값의 차이만 모델에 전달한다. 시스템 날짜/시각 보정에 영향을 받지 않는다.
         bool AdvanceToNow()
         {
             double now = clock.Elapsed.TotalSeconds;
@@ -118,6 +132,7 @@ namespace TaskbarGames.Games.Baseball
             return session.Advance(elapsed);
         }
 
+        // 작업 영역 변경과 모델 진행 결과를 합쳐 실제 변화가 있을 때만 화면을 무효화한다.
         void Tick(object sender, EventArgs e)
         {
             bool changed = false;
@@ -127,12 +142,16 @@ namespace TaskbarGames.Games.Baseball
             if (changed) Invalidate();
         }
 
+        // 비활성 상태는 250ms, 움직이는 동안은 16ms로 갱신한다.
+        // 정적인 결과 화면은 다음 전환 시점까지만 기다리되 작업 영역 확인을 위해 최대 250ms로 제한한다.
         void UpdateTimer()
         {
             timer.Interval = !session.Active ? 250 : session.Phase == BaseballPhase.Result && session.SwingAge < 0
                 ? Math.Max(1, Math.Min(250, (int)Math.Ceiling((BaseballSession.ResultSeconds - session.Elapsed) * 1000))) : 16;
         }
 
+        // Pitch에서는 투수→타격점 진행률과 작은 높이 변화를 사용한다.
+        // Flight에서는 모델의 실제 펜스 반영 거리/높이를 화면 논리 좌표로 변환한다.
         PointF BallPosition(double seconds)
         {
             if (session.Phase == BaseballPhase.Pitch)
@@ -145,18 +164,23 @@ namespace TaskbarGames.Games.Baseball
             return new PointF(FieldX(session.FlightDistance(t)), (float)(ground - session.FlightHeight(t)));
         }
 
+        // 0~160m를 타격점부터 화면 오른쪽 여백 28까지 선형 매핑한다. 창 폭이 달라도 점수 거리는 변하지 않는다.
         float FieldX(double meters) { return ContactX + (WorldWidth - ContactX - 28) * (float)meters / 160f; }
 
+        // 마지막 결과의 실제 착지 거리로 라벨과 공의 최종 표시 위치를 구한다.
         float LandingX()
         {
             return FieldX(session.LastHit.Distance);
         }
 
+        // 현재 Graphics 변환을 따르는 사각형 도우미다. 화면 픽셀로 쓰려면 호출 전에 변환을 초기화해야 한다.
         void Box(Graphics g, int x, int y, int width, int height, Color color)
         {
             using (SolidBrush brush = new SolidBrush(color)) g.FillRectangle(brush, x, y, width, height);
         }
 
+        // 필드와 선수는 축소 변환으로, HUD와 결과 라벨은 별도 Save/ResetTransform/Restore 구간에서 그린다.
+        // 점수판 너비는 문자열 길이에 맞춰 늘고 종료 버튼 클릭 영역도 실제 그려진 위치와 함께 갱신한다.
         protected override void OnPaint(PaintEventArgs e)
         {
             base.OnPaint(e);
@@ -208,6 +232,7 @@ namespace TaskbarGames.Games.Baseball
                 GraphicsState resultState = g.Save();
                 g.ResetTransform();
                 int width = Math.Max(PixelArt.Width(label), PixelArt.Width(points)) + 8;
+                // 결과 배치는 화면 픽셀 기준으로 계산한다. 오른쪽 공간 부족 시 왼쪽으로 옮기고 HUD와 겹치면 위로 올린다.
                 int landing = (int)Math.Round(LandingX() * GameScale);
                 int x = session.LastHit.Hit ? landing + 6 : hudX;
                 if (x + width > ClientSize.Width - 6) x = landing - width - 6;
@@ -225,6 +250,8 @@ namespace TaskbarGames.Games.Baseball
             g.Restore(saved);
         }
 
+        // 130m 위치의 펜스와 거리/홈런 표시를 그린다.
+        // 펜스는 축소하지만 글자는 원래 1픽셀 획을 유지하도록 화면 좌표로 따로 출력한다.
         void DrawFence(Graphics g)
         {
             int x = (int)FieldX(BaseballSession.FenceDistance);
@@ -249,6 +276,7 @@ namespace TaskbarGames.Games.Baseball
             g.Restore(labelState);
         }
 
+        // 준비 단계의 공 모으기·팔 접기·릴리스 시각에 맞춰 팔 관절과 공 위치를 보간한다.
         void DrawPitchingArm(Graphics g)
         {
             Point gatheredElbow = new Point(7, -24), gatheredHand = new Point(-6, -30);
@@ -306,6 +334,7 @@ namespace TaskbarGames.Games.Baseball
             }
         }
 
+        // 폼 종료 시 타이머를 해제하여 닫힌 게임의 업데이트가 남지 않게 한다.
         protected override void Dispose(bool disposing)
         {
             if (disposing) timer.Dispose();

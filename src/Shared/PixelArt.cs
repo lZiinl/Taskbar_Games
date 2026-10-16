@@ -1,3 +1,6 @@
+﻿// 외부 폰트·이미지 파일 없이 픽셀 글자와 문자 배열 스프라이트를 그리는 공통 도구.
+// Graphics의 현재 변환을 그대로 따른다. 작은 글자는 호출 측에서 정수 화면 좌표로 그려야 획이 보존된다.
+
 using System;
 using System.Collections.Generic;
 using System.Drawing;
@@ -6,6 +9,8 @@ namespace TaskbarGames.Shared
 {
     internal static class PixelArt
     {
+        // 5×7 글꼴 데이터. 글자마다 14자리 16진수 문자열을 저장한다.
+        // 두 자리씩 잘라 한 행의 비트 마스크로 읽고, 하위 5비트를 왼쪽부터 출력한다.
         static readonly Dictionary<char, string> Glyphs = new Dictionary<char, string> {
             {'0', "0E11131519110E"}, {'1', "040C040404040E"}, {'2', "0E11010204081F"},
             {'3', "1E01010E01011E"}, {'4', "02060A121F0202"}, {'5', "1F10101E01011E"},
@@ -23,8 +28,12 @@ namespace TaskbarGames.Shared
             {':', "00040400040400"}, {'.', "00000000000C0C"}, {'|', "04040404040404"}
         };
 
+        // 글자 너비 5픽셀 + 글자 사이 1픽셀. 마지막 글자 뒤 여백은 제외한다.
+        // 빈 문자열은 음수가 되지 않도록 0을 반환한다.
         public static int Width(string text) { return Math.Max(0, text.Length * 6 - 1); }
 
+        // 지정 위치부터 글자별 비트 마스크를 채운다. 미등록 문자는 공백처럼 자리만 차지한다.
+        // Brush는 한 문자열 안에서 재사용하고 using으로 GDI 리소스를 반환한다.
         public static void Text(Graphics g, string text, Color color, int x, int y)
         {
             using (SolidBrush brush = new SolidBrush(color))
@@ -42,6 +51,9 @@ namespace TaskbarGames.Shared
                 }
         }
 
+        // 문자 하나가 논리 픽셀 하나다. pixel은 화면에 그릴 정사각형 변 길이이다.
+        // D는 윤곽, B는 전달한 기본색, L/C는 기본색의 명암이며 나머지는 고정 색상이다.
+        // 알 수 없는 문자와 점은 그리지 않으므로 배경이 그대로 보인다.
         public static void Sprite(Graphics g, string[] rows, int x, int y, Color uniform, int pixel = 2)
         {
             for (int row = 0; row < rows.Length; row++)

@@ -1,3 +1,6 @@
+﻿// 야구 타격 규칙과 실제 창 연결을 검증하는 회귀 테스트.
+// 시간 오차를 직접 주입하여 프레임 속도가 바뀌어도 거리와 점수가 일정한지 확인한다.
+
 using System;
 using System.Diagnostics;
 using System.Drawing;
@@ -10,8 +13,10 @@ using TaskbarGames.Games.Baseball;
 public static class BaseballRegressionTests
 {
     const BindingFlags Private = BindingFlags.Instance | BindingFlags.NonPublic;
+    // 조건 실패 시 예외로 중단하여 PowerShell에서도 오류를 확인할 수 있게 한다.
     static void Assert(bool value, string message) { if (!value) throw new Exception(message); }
 
+    // 고정 시드의 세션을 활성화하고 투구 단계까지 진행해 테스트마다 같은 출발 조건을 만든다.
     static BaseballSession NewPitch(int seed)
     {
         BaseballSession game = new BaseballSession(new Random(seed));
@@ -21,6 +26,8 @@ public static class BaseballRegressionTests
         return game;
     }
 
+    // 목표 타격 오차에 맞는 입력 시각을 계산한 뒤 일정 프레임 간격으로 진행한다.
+    // 입력 시각과 예약된 접촉 시각을 구분해 SwingContactDelay가 판정에 반영되는지 검사한다.
     static BaseballSession Hit(double error, double frameSeconds)
     {
         BaseballSession game = NewPitch(42);
@@ -34,6 +41,7 @@ public static class BaseballRegressionTests
         return game;
     }
 
+    // 투구 범위·타이밍 등급·점수·키 반복·포커스 취소·비행 일시 정지와 펜스 결과를 순서대로 확인한다.
     public static void Run(string artifacts)
     {
         BattingResult perfect = BaseballSession.EvaluateTiming(0);
@@ -104,11 +112,13 @@ public static class BaseballRegressionTests
         RenderPitcherPoses(artifacts);
     }
 
+    // 타격 거리 식의 역함수로 원하는 비거리를 만드는 오차를 구해 펜스 경계 사례를 준비한다.
     static double ErrorForDistance(int distance)
     {
         return BaseballSession.HitWindow * (1 - Math.Pow((distance - 12) / 148.0, 2.0 / 3));
     }
 
+    // 펜스 앞/충돌/홈런 경계와 표시 시점, 착지 시에만 점수를 주는 규칙을 검증한다.
     static void CheckFence()
     {
         Assert(!BaseballSession.EvaluateTiming(ErrorForDistance(130)).HomeRun, "Landing at the fence counted as a home run.");
@@ -136,6 +146,7 @@ public static class BaseballRegressionTests
         Console.WriteLine("PASS: 130m fence, low-ball rebound, home run crossing, focus pause and landing-only scoring.");
     }
 
+    // 스윙의 준비·접촉·팔로스루·복귀 시각을 나란히 그려 관절 애니메이션을 육안 확인할 수 있게 한다.
     static void RenderSwingPoses(string artifacts)
     {
         Type animator = typeof(BaseballGame).Assembly.GetType("TaskbarGames.Games.Baseball.BatterAnimation");
@@ -160,11 +171,13 @@ public static class BaseballRegressionTests
         }
     }
 
+    // 폼 내부 테스트 진입점은 Reflection으로 호출하여 테스트 편의를 위한 공개 API 추가를 피한다.
     static void Call(BaseballGame game, string name, params object[] args)
     {
         typeof(BaseballGame).GetMethod(name, Private | BindingFlags.DeclaredOnly).Invoke(game, args);
     }
 
+    // 투수 준비 동작의 여러 시점을 고정해 이미지로 저장한다. UI 타이머에 따른 우연한 프레임을 사용하지 않는다.
     static void RenderPitcherPoses(string artifacts)
     {
         double[] times = { 0, 0.48, 0.58, 0.67, 0.76, 0.849, 0.85, 0.97, 1.10 };
@@ -193,6 +206,8 @@ public static class BaseballRegressionTests
         }
     }
 
+    // 실제 OnPaint 출력을 비트맵에 그리고 착지 결과 색상의 존재 여부를 검사한다.
+    // 하단 게임 영역만 잘라 저장하여 검토할 화면 크기를 줄인다.
     static void Render(BaseballGame game, string path)
     {
         using (Bitmap bitmap = new Bitmap(game.Width, game.Height))
@@ -214,6 +229,7 @@ public static class BaseballRegressionTests
         }
     }
 
+    // 폼의 입력 이벤트·재그리기 요청·Esc 종료를 검사하고 투구/비행/결과 화면을 렌더링한다.
     static void RenderAndCheckWindow(string artifacts)
     {
         using (BaseballGame game = new BaseballGame())

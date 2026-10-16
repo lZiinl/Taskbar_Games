@@ -1,3 +1,6 @@
+﻿// 선택창의 배치·게임 단일 실행·복귀·종료를 검증하는 회귀 테스트.
+// 테스트용 창은 실제 화면에 표시하지 않고 메시지 처리/그리기 진입점을 호출한다.
+
 using System;
 using System.Drawing;
 using System.Drawing.Imaging;
@@ -9,9 +12,11 @@ using TaskbarGames.Launcher;
 public static class LauncherRegressionTests
 {
     const BindingFlags Private = BindingFlags.Instance | BindingFlags.NonPublic;
+    // 표시 요청 여부는 기록하되 실제 창은 숨겨 자동 테스트가 사용자 화면을 가리지 않게 한다.
     sealed class HiddenLauncher : LauncherForm
     {
         public bool RequestedVisible;
+        // 키 처리 경로를 직접 호출하여 자식 버튼 포커스와 관계없이 Esc가 종료로 이어지는지 검사한다.
         public bool PressEscape()
         {
             Message message = Message.Create(Handle, 0x100, (IntPtr)Keys.Escape, IntPtr.Zero);
@@ -19,18 +24,24 @@ public static class LauncherRegressionTests
         }
         protected override void SetVisibleCore(bool value) { RequestedVisible = value; base.SetVisibleCore(false); }
     }
+    // 핸들은 생성해 Close/Dispose 생명주기를 실행하되 화면 표시만 억제하는 대역 게임이다.
     sealed class HiddenGame : Form
     {
         public HiddenGame() { IntPtr handle = Handle; }
         protected override void SetVisibleCore(bool value) { base.SetVisibleCore(false); }
     }
+    // 조건 실패는 예외로 전달해 PowerShell 실행 스크립트를 실패시킨다.
     static void Assert(bool value, string message) { if (!value) throw new Exception(message); }
+    // 운영 코드의 공개 API를 늘리지 않고 internal OpenGame을 Reflection으로 호출한다.
     static void Open(LauncherForm launcher, Func<Form> factory)
     {
         typeof(LauncherForm).GetMethod("OpenGame", Private).Invoke(launcher, new object[] { factory });
     }
+    // 현재 게임 소유권을 검사하기 위해 private activeGame 참조를 읽는다.
     static object Active(LauncherForm launcher) { return typeof(LauncherForm).GetField("activeGame", Private).GetValue(launcher); }
 
+    // 아이콘/종료 버튼 수와 작업표시줄 정렬을 확인하고 선택창 미리보기를 저장한다.
+    // 중복 생성 차단 → 게임 종료 후 복귀 → 재선택 → 앱 종료 및 Esc/종료 버튼 경로를 검증한다.
     public static void Run(string artifacts)
     {
         using (HiddenLauncher launcher = new HiddenLauncher())

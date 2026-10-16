@@ -1,3 +1,6 @@
+﻿// 공룡 러너의 물리·입력 규칙·가속·랜덤 간격·창 배치를 검증한다.
+// 고정 시드로 재현성을 확보하고 실제 대기 없이 모델 시간을 진행해 장시간 플레이를 검사한다.
+
 using System;
 using System.Drawing;
 using System.Drawing.Imaging;
@@ -8,7 +11,10 @@ using TaskbarGames.Games.Runner;
 
 public static class RunnerRegressionTests
 {
+    // 실패 원인을 예외 메시지로 남겨 테스트 실행 스크립트가 즉시 중단되게 한다.
     static void Assert(bool condition, string message) { if (!condition) throw new Exception(message); }
+    // 비활성 점프 차단, 이중 점프 차단, 키를 뗀 시점별 높이, 충돌/재시작/최고 점수를 검증한다.
+    // 마지막에는 실제 폼의 OnPaint를 호출해 흑백 러너 미리보기를 저장한다.
     public static void Run(string artifacts)
     {
         RunnerSession paused = new RunnerSession(new Random(1));
@@ -28,12 +34,17 @@ public static class RunnerRegressionTests
         double baseline = -1;
         RunnerSession jumping = new RunnerSession(new Random(7)); jumping.Active = true; jumping.Jump();
         double smallestGap = Double.MaxValue, largestGap = 0;
-        for (int i = 0; i < 60 * 120; i++)
+        Assert(jumping.Speed == RunnerSession.InitialSpeed, "Runner should start at its initial speed.");
+        // 210초를 시뮬레이션해 180초 가속 이후 최고 속도 구간까지 검사한다.
+        // 장애물 접근 시간을 속도에 맞춰 계산하는 자동 점프로 최소 간격의 통과 가능성을 확인한다.
+        for (int i = 0; i < 60 * 210; i++)
         {
             foreach (RunnerObstacle obstacle in jumping.Obstacles)
                 if (obstacle.X + obstacle.Width > 46 && obstacle.X > 60 && obstacle.X < 61 + jumping.Speed * 0.26 && jumping.Height == 0)
                 { jumping.Jump(); break; }
-            jumping.Advance(1.0 / 60, 480);
+            jumping.Advance(1.0 / 60, 1280);
+            if (i == 60 * 90 - 1) Assert(Math.Abs(jumping.Speed - 350) < 0.02, "Halfway through the ramp speed must be 350 pixels per second.");
+            if (i == 60 * 180 - 1) Assert(Math.Abs(jumping.Speed - 560) < 0.02, "Runner should reach four times initial speed at 180 seconds.");
             for (int j = 1; j < jumping.Obstacles.Count; j++)
             {
                 double gap = jumping.Obstacles[j].X - jumping.Obstacles[j-1].X - jumping.Obstacles[j-1].Width;
@@ -43,6 +54,7 @@ public static class RunnerRegressionTests
         }
         Assert(jumping.Phase == RunnerPhase.Running && jumping.Speed == RunnerSession.MaximumSpeed, "Well-timed jumps must clear obstacles all the way to maximum speed.");
         Assert(largestGap - smallestGap > 100, "Obstacle gaps should visibly vary.");
+        // 같은 시드와 입력에서 프레임 간격만 바꾸어 고정 단계 물리가 비슷한 충돌 위치를 내는지 비교한다.
         foreach (int fps in new int[] { 30, 60, 144 })
         {
             RunnerSession game = new RunnerSession(new Random(3)); game.Active = true; game.Jump();

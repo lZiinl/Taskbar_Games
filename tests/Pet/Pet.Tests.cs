@@ -1,3 +1,6 @@
+﻿// 다람쥐의 수치·다중 먹이·돌봄 우선순위·아이콘 메뉴와 화면 끝 버그를 검사한다.
+// persist=false 생성자를 사용해 실제 사용자 저장 파일을 읽거나 수정하지 않는다.
+
 using System;
 using System.Drawing;
 using System.Drawing.Imaging;
@@ -8,7 +11,9 @@ using TaskbarGames.Games.Pet;
 
 public static class PetRegressionTests
 {
+    // 실패 조건을 설명하는 예외를 발생시킨다. 반환값 대신 예외를 써 PowerShell에서도 실패를 감지한다.
     static void Assert(bool value, string message) { if (!value) throw new Exception(message); }
+    // 모델 수치 → 행동/먹이 → 화면 그리기 → 다중 먹이/5개 제한/돌봄 → 양 끝 이동 → 팔레트/배치 순서로 검증한다.
     public static void Run(string artifacts)
     {
         PetSession session = new PetSession();
@@ -27,6 +32,9 @@ public static class PetRegressionTests
         using (Bitmap strip = new Bitmap(624, 110))
         using (Graphics g = Graphics.FromImage(strip))
         {
+            // 실제 네이티브 창 생성 후 크기를 검사해야 Windows 최소 창 크기 보정으로 생긴 버그를 잡을 수 있다.
+            // 생성자 직후 ClientSize만 검사하면 실제 실행 때의 크기 확장을 놓친다.
+            IntPtr petHandle = pet.Handle;
             Assert(pet.Bottom == Screen.PrimaryScreen.WorkingArea.Bottom, "Pet must stand on taskbar.");
             Assert(pet.ClientSize == new Size(76, 56), "Pet footprint should be compact.");
             MethodInfo advance = typeof(PetGame).GetMethod("AdvanceBehavior", flags);
@@ -80,6 +88,7 @@ public static class PetRegressionTests
             MethodInfo step = typeof(PetGame).GetMethod("AdvanceBehavior", flags);
             FieldInfo position = typeof(PetGame).GetField("x", flags);
             FieldInfo action = typeof(PetGame).GetField("action", flags);
+            // 다른 거리의 먹이를 놓아 입력 순서가 아니라 가장 가까운 것을 먼저 먹는지 확인한다.
             double origin = Screen.PrimaryScreen.WorkingArea.Left + 250;
             position.SetValue(pet, origin);
             add.Invoke(pet, new object[] { origin + 38 + 180 });
@@ -95,6 +104,7 @@ public static class PetRegressionTests
             step.Invoke(pet, new object[] { 1.0 });
             Assert(state.Meals == 1 && food.Count == 3 && (string)action.GetValue(pet) == "eat", "Adding food must not interrupt chewing.");
             for (int i = 0; i < 700; i++) step.Invoke(pet, new object[] { 0.1 });
+            // 목록에서 제거와 점수 반영이 중복되지 않는지 전체 먹이 소진 후 확인한다.
             Assert(state.Meals == 4 && food.Count == 0, "Every queued acorn must be eaten exactly once.");
             for (int i = 0; i < 5; i++) Assert((bool)add.Invoke(pet, new object[] { origin + 100 + i * 20 }), "Five acorns should be allowed.");
             Assert(!(bool)add.Invoke(pet, new object[] { origin + 250 }) && food.Count == 5, "Sixth acorn must be rejected without removing existing food.");
@@ -110,6 +120,32 @@ public static class PetRegressionTests
             typeof(PetGame).GetMethod("StartAction", flags).Invoke(pet, new object[] { "sleep", 300.0 });
             step.Invoke(pet, new object[] { 10.0 });
             Assert((string)action.GetValue(pet) == "sleep", "Manual sleep must take precedence over queued food.");
+        }
+        using (PetGame pet = (PetGame)Activator.CreateInstance(typeof(PetGame), flags, null, new object[] { false }, null))
+        {
+            IntPtr handle = pet.Handle;
+            Rectangle area = Screen.PrimaryScreen.WorkingArea;
+            FieldInfo position = typeof(PetGame).GetField("x", flags);
+            FieldInfo action = typeof(PetGame).GetField("action", flags);
+            MethodInfo add = typeof(PetGame).GetMethod("SetFoodTarget", flags);
+            MethodInfo step = typeof(PetGame).GetMethod("AdvanceBehavior", flags);
+            PetSession state = (PetSession)typeof(PetGame).GetField("session", flags).GetValue(pet);
+            position.SetValue(pet, (double)area.Right - 160);
+            add.Invoke(pet, new object[] { (double)area.Right - 1 });
+            for (int i = 0; i < 50 && state.Meals == 0; i++) step.Invoke(pet, new object[] { 0.1 });
+            Assert(state.Meals == 1 && pet.Right == area.Right, "Native pet window must reach and eat right-edge acorn.");
+            action.SetValue(pet, "walk");
+            position.SetValue(pet, (double)area.Left + 100);
+            add.Invoke(pet, new object[] { (double)area.Left });
+            for (int i = 0; i < 50 && state.Meals == 1; i++) step.Invoke(pet, new object[] { 0.1 });
+            Assert(state.Meals == 2 && pet.Left == area.Left, "Native pet window must reach and eat left-edge acorn.");
+        }
+        // 작은 도토리 표시 창도 실제 핸들을 생성하여 네이티브 크기가 의도한 16×16인지 검사한다.
+        Type markerType = typeof(PetGame).Assembly.GetType("TaskbarGames.Games.Pet.AcornMarker");
+        using (Form marker = (Form)Activator.CreateInstance(markerType))
+        {
+            IntPtr handle = marker.Handle;
+            Assert(marker.Size == new Size(16, 16), "Native acorn marker must keep its compact footprint.");
         }
         Type paletteType = typeof(PetGame).Assembly.GetType("TaskbarGames.Shared.TankPalette");
         using (Form palette = (Form)Activator.CreateInstance(paletteType, new object[] { Color.FromArgb(85, 255, 160) }))
@@ -133,6 +169,7 @@ public static class PetRegressionTests
             Assert(palette.DialogResult == DialogResult.OK, "Palette selection should confirm.");
             Assert(((Color)paletteType.GetProperty("SelectedColor", flags).GetValue(palette, null)).ToArgb() == Color.FromArgb(66,232,255).ToArgb(), "Palette must return the clicked color.");
         }
+        // 화면을 덮지 않는 배치 창의 투명 설정과 좌/우클릭 확정·취소 경로를 검사한다.
         Type placementType = typeof(PetGame).Assembly.GetType("TaskbarGames.Games.Pet.AcornPlacement");
         using (Form placement = (Form)Activator.CreateInstance(placementType))
         {
