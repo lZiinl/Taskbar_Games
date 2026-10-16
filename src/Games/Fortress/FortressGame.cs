@@ -84,6 +84,7 @@ namespace TaskbarGames.Games.Fortress
         internal FortressGame(bool loadSettings)
         {
             Text = "Taskbar_Games - Fortress";
+            Icon = ArcadeTheme.AppIcon;
             FormBorderStyle = FormBorderStyle.None;
             BackColor = Color.Magenta;
             TransparencyKey = Color.Magenta;
@@ -353,7 +354,7 @@ namespace TaskbarGames.Games.Fortress
             }
             if (result.Length > 0)
             {
-                SizeF size = new SizeF(TextWidth(result, 2), 14 / GameScale);
+                SizeF size = new SizeF(TextWidth(result, 1), 7 / GameScale);
                 string comboText = wasHit && combo >= 2 ? combo + " COMBO" : "";
                 float labelWidth = Math.Max(size.Width, TextWidth(comboText, 1));
                 float x = targetX + 31;
@@ -361,7 +362,7 @@ namespace TaskbarGames.Games.Fortress
                     x = targetX - 31 - labelWidth;
                 float y = ground - 19 - size.Height / 2;
                 PixelRect(g, ink, x - 6, y - 4, size.Width + 12, size.Height + 8);
-                DrawPixelText(g, result, 2, wasHit ? green : Color.FromArgb(255, 135, 141), x, y);
+                DrawPixelText(g, result, 1, wasHit ? green : Color.FromArgb(255, 135, 141), x, y);
                 if (comboText.Length > 0)
                 {
                     PixelRect(g, ink, x - 6, y - 25, labelWidth + 12, 19);

@@ -7,6 +7,7 @@ if (-not (Test-Path -LiteralPath $compiler)) {
 $output = Join-Path $projectRoot 'bin'
 New-Item -ItemType Directory -Path $output -Force | Out-Null
 $sources = @(Get-ChildItem -LiteralPath (Join-Path $projectRoot 'src') -Filter '*.cs' -Recurse | Sort-Object FullName | ForEach-Object { $_.FullName })
-& $compiler /nologo /target:winexe /optimize+ /reference:System.Windows.Forms.dll /reference:System.Drawing.dll "/out:$output\Taskbar_Games.exe" @sources
+$iconPath = Join-Path $projectRoot 'assets\TaskbarGames.ico'
+& $compiler /nologo /target:winexe /optimize+ /reference:System.Windows.Forms.dll /reference:System.Drawing.dll "/win32icon:$iconPath" "/resource:$iconPath,TaskbarGames.ico" "/out:$output\Taskbar_Games.exe" @sources
 if ($LASTEXITCODE -ne 0) { throw 'Build failed.' }
 Write-Output "Built: $output\Taskbar_Games.exe"

@@ -33,6 +33,7 @@ namespace TaskbarGames.Games.Pet
         {
             persist = loadSettings;
             Text = "Taskbar_Games - Squirrel";
+            Icon = ArcadeTheme.AppIcon;
             AutoScaleMode = AutoScaleMode.None;
             FormBorderStyle = FormBorderStyle.None;
             ClientSize = new Size(76, 56);

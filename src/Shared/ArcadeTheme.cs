@@ -6,6 +6,12 @@ namespace TaskbarGames.Shared
 {
     internal static class ArcadeTheme
     {
+        public static readonly Icon AppIcon = LoadIcon();
+        static Icon LoadIcon()
+        {
+            using (System.IO.Stream stream = typeof(ArcadeTheme).Assembly.GetManifestResourceStream("TaskbarGames.ico"))
+            using (Icon source = new Icon(stream)) return (Icon)source.Clone();
+        }
         public static readonly Color Black = Color.FromArgb(8, 9, 14);
         public static readonly Color Panel = Color.FromArgb(17, 20, 29);
         public static readonly Color Neon = Color.FromArgb(85, 255, 160);
@@ -55,6 +61,8 @@ namespace TaskbarGames.Shared
             AutoScaleMode = AutoScaleMode.None;
             FormBorderStyle = FormBorderStyle.None;
             StartPosition = FormStartPosition.Manual;
+            // Pin native tracking limits too; Windows otherwise expands tiny forms when their handle is created.
+            MinimumSize = MaximumSize = new Size(92, 82);
             ClientSize = new Size(92, 82); BackColor = ArcadeTheme.Black;
             ShowInTaskbar = false; TopMost = true; DoubleBuffered = true;
             Rectangle work = Screen.FromPoint(Cursor.Position).WorkingArea;

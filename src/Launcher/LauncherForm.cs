@@ -18,30 +18,31 @@ namespace TaskbarGames.Launcher
         public LauncherForm()
         {
             Text = "Taskbar_Games";
+            Icon = ArcadeTheme.AppIcon;
             AutoScaleMode = AutoScaleMode.None;
             FormBorderStyle = FormBorderStyle.None;
-            MinimumSize = MaximumSize = new Size(68, 68);
-            ClientSize = new Size(68, 68);
+            MinimumSize = MaximumSize = new Size(58, 58);
+            ClientSize = new Size(58, 58);
             BackColor = ArcadeTheme.Black;
             TopMost = true;
             StartPosition = FormStartPosition.Manual;
             DoubleBuffered = true;
             KeyPreview = true;
             GameCard fortress = new GameCard(false);
-            fortress.Bounds = new Rectangle(4, 4, 28, 28);
+            fortress.Bounds = new Rectangle(3, 3, 24, 24);
             fortress.Click += delegate { OpenGame(delegate { return new FortressGame(); }); };
             GameCard baseball = new GameCard(true);
-            baseball.Bounds = new Rectangle(36, 4, 28, 28);
+            baseball.Bounds = new Rectangle(31, 3, 24, 24);
             baseball.Click += delegate { OpenGame(delegate { return new BaseballGame(); }); };
             Controls.Add(fortress);
             Controls.Add(baseball);
             GameCard pet = new GameCard(false, true);
-            pet.Bounds = new Rectangle(4, 36, 28, 28);
+            pet.Bounds = new Rectangle(3, 31, 24, 24);
             pet.Click += delegate { OpenGame(delegate { return new PetGame(); }); };
             Controls.Add(pet);
             GameCard exit = new GameCard(false, false, true);
             exit.Name = "ExitButton";
-            exit.Bounds = new Rectangle(36, 36, 28, 28);
+            exit.Bounds = new Rectangle(31, 31, 24, 24);
             exit.Click += delegate { Close(); };
             Controls.Add(exit);
             hints.SetToolTip(exit, "종료 (Esc)");
@@ -172,19 +173,19 @@ namespace TaskbarGames.Launcher
                     using (SolidBrush brush = new SolidBrush(accent))
                         for (int i = 0; i < 6; i++)
                         {
-                            g.FillRectangle(brush, 8 + i * 2, 8 + i * 2, 2, 2);
-                            g.FillRectangle(brush, 18 - i * 2, 8 + i * 2, 2, 2);
+                            g.FillRectangle(brush, 6 + i * 2, 6 + i * 2, 2, 2);
+                            g.FillRectangle(brush, 16 - i * 2, 6 + i * 2, 2, 2);
                         }
                 }
                 else if (pet)
                 {
                     System.Drawing.Drawing2D.GraphicsState state = g.Save();
                     g.TranslateTransform(2, 3);
-                    g.ScaleTransform(0.75f, 0.75f);
+                    g.ScaleTransform(0.625f, 0.625f);
                     PetGame.DrawSquirrel(g, 0, 0, true, "idle", 0, 1);
                     g.Restore(state);
                 }
-                else PixelArt.Sprite(g, baseball ? Ball : Tank, baseball ? 8 : 4, baseball ? 8 : 9, accent, 1);
+                else PixelArt.Sprite(g, baseball ? Ball : Tank, baseball ? 6 : 2, baseball ? 6 : 7, accent, 1);
             }
         }
     }

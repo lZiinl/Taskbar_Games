@@ -46,6 +46,7 @@ namespace TaskbarGames.Games.Baseball
         public BaseballGame()
         {
             Text = "Taskbar_Games - Baseball";
+            Icon = ArcadeTheme.AppIcon;
             FormBorderStyle = FormBorderStyle.None;
             BackColor = Color.Magenta;
             TransparencyKey = Color.Magenta;

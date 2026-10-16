@@ -79,6 +79,7 @@ public static class PetRegressionTests
         using (Graphics canvas = Graphics.FromImage(preview))
         {
             Assert(palette.Controls.Count == 13, "Palette must contain twelve colors and cancel.");
+            IntPtr paletteHandle = palette.Handle;
             Assert(palette.ClientSize == new Size(92, 82), "Palette should be half its previous width and height.");
             canvas.Clear(palette.BackColor);
             paletteType.GetMethod("OnPaint", flags).Invoke(palette, new object[] { new PaintEventArgs(canvas, palette.ClientRectangle) });

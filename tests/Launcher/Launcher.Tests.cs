@@ -38,7 +38,7 @@ public static class LauncherRegressionTests
             IntPtr handle = launcher.Handle;
             Rectangle work = Screen.PrimaryScreen.WorkingArea;
             Assert(launcher.Controls.Count == 4 && launcher.Controls["ExitButton"] != null, "Launcher must offer three games and exit.");
-            Assert(launcher.ClientSize == new Size(68, 68) && launcher.Right == work.Right - 8 && launcher.Bottom == work.Bottom - 8,
+            Assert(launcher.ClientSize == new Size(58, 58) && launcher.Right == work.Right - 8 && launcher.Bottom == work.Bottom - 8,
                 "Compact launcher is not anchored above the taskbar's right edge: size=" + launcher.ClientSize + ", bounds=" + launcher.Bounds + ", work=" + work);
             using (Bitmap preview = new Bitmap(launcher.ClientSize.Width, launcher.ClientSize.Height))
             {
