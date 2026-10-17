@@ -14,13 +14,14 @@ namespace TaskbarGames.Games.Pet
         // 선택 결과는 클라이언트 상대 좌표가 아닌 화면 X좌표다. PetGame이 접근 가능한 범위로 보정한다.
         internal int SelectedX { get; private set; }
         int previewX;
+        readonly Timer displayTimer = new Timer();
         // 작업 영역 하단의 24px 투명 띠를 생성한다. 커서 X만 위치 선택에 사용한다.
         // 왼쪽 클릭은 확정, 다른 마우스 버튼은 취소이며 포커스를 잃어도 닫는다.
         public AcornPlacement()
         {
             AutoScaleMode = AutoScaleMode.None;
             FormBorderStyle = FormBorderStyle.None; StartPosition = FormStartPosition.Manual;
-            Rectangle area = Screen.PrimaryScreen.WorkingArea;
+            Rectangle area = GameEnvironment.Display.WorkingArea;
             MinimumSize = MaximumSize = new Size(area.Width, 24);
             Bounds = new Rectangle(area.Left, area.Bottom - 24, area.Width, 24);
             BackColor = TransparencyKey = Color.Magenta;
@@ -34,6 +35,13 @@ namespace TaskbarGames.Games.Pet
                 Close();
             };
             Deactivate += delegate { Close(); };
+            displayTimer.Interval = 250;
+            displayTimer.Tick += delegate {
+                Rectangle current = GameEnvironment.Display.WorkingArea;
+                if (Left != current.Left || Bottom != current.Bottom || Width != current.Width)
+                { DialogResult = DialogResult.Cancel; Close(); }
+            };
+            displayTimer.Start();
         }
         // 창이 활성화된 뒤 캡처를 시작해야 배경의 투명한 부분이나 창 밖의 클릭도 받을 수 있다.
         // 따라서 클릭의 Y와 무관하게 원하는 가로 위치를 선택할 수 있다.
@@ -50,6 +58,8 @@ namespace TaskbarGames.Games.Pet
             Capture = false;
             base.OnFormClosed(e);
         }
+        protected override void Dispose(bool disposing)
+        { if (disposing) displayTimer.Dispose(); base.Dispose(disposing); }
         // Esc는 도토리 배치만 취소한다. 부모인 다람쥐 게임까지 종료하지 않는다.
         protected override bool ProcessCmdKey(ref Message msg, Keys keys)
         { if (keys == Keys.Escape) { DialogResult = DialogResult.Cancel; Close(); return true; } return base.ProcessCmdKey(ref msg, keys); }

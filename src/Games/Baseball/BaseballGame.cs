@@ -12,7 +12,8 @@ namespace TaskbarGames.Games.Baseball
 {
     public sealed class BaseballGame : Form
     {
-        readonly BaseballSession session = new BaseballSession();
+        readonly BaseballSession session;
+        readonly GameStore store;
         readonly Timer timer = new Timer();
         readonly Stopwatch clock = Stopwatch.StartNew();
         readonly Color ink = ArcadeTheme.Black;
@@ -54,6 +55,10 @@ namespace TaskbarGames.Games.Baseball
         // 키를 누른 채 복귀한 경우 먼저 떼도록 하며 종료 버튼 판정은 화면 좌표를 논리 좌표로 바꿔 검사한다.
         public BaseballGame()
         {
+            store = GameEnvironment.Store;
+            session = new BaseballSession(new Random(), store.Data.BaseballBestDistance, store.Data.BaseballScore, store.Data.BaseballAttempts, store.Data.BaseballHits);
+            session.AttemptCompleted += SaveRecords;
+            FormClosing += delegate { SaveRecords(); };
             Text = "Taskbar_Games - Baseball";
             Icon = ArcadeTheme.AppIcon;
             FormBorderStyle = FormBorderStyle.None;
@@ -94,11 +99,20 @@ namespace TaskbarGames.Games.Baseball
             timer.Start();
         }
 
+        void SaveRecords()
+        {
+            store.Data.BaseballBestDistance = session.BestDistance;
+            store.Data.BaseballScore = session.Score;
+            store.Data.BaseballAttempts = session.Attempts;
+            store.Data.BaseballHits = session.Hits;
+            store.Save();
+        }
+
         // 작업 영역을 다시 읽고 논리 지면·투수 위치·초기 종료 버튼 위치를 설정한다.
         // 화면 변경 중 진행되던 투구는 초기화하지만 모델의 누적 기록은 보존한다.
         void ResetLayout()
         {
-            Bounds = Screen.PrimaryScreen.WorkingArea;
+            Bounds = GameEnvironment.Display.WorkingArea;
             ground = (int)((ClientSize.Height - 2) / GameScale);
             pitcherX = Math.Min((int)WorldWidth - 44, Math.Max(390, Math.Min(580, (int)(WorldWidth * 0.36))));
             closeButton = new Rectangle(338, ground - 15, 15, 14);
@@ -136,7 +150,7 @@ namespace TaskbarGames.Games.Baseball
         void Tick(object sender, EventArgs e)
         {
             bool changed = false;
-            if (Bounds != Screen.PrimaryScreen.WorkingArea) { ResetLayout(); changed = true; }
+            if (Bounds != GameEnvironment.Display.WorkingArea) { ResetLayout(); changed = true; }
             changed = AdvanceToNow() || changed;
             UpdateTimer();
             if (changed) Invalidate();

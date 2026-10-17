@@ -1,5 +1,5 @@
 ﻿// 공룡 러너의 WinForms 입력·위치·흑백 렌더링 계층.
-// 기본 모니터 작업 영역의 왼쪽 절반을 쓰며 실제 규칙은 RunnerSession에 위임한다.
+// 선택한 모니터 작업 영역의 왼쪽 절반을 쓰며 실제 규칙은 RunnerSession에 위임한다.
 
 using System;
 using System.Diagnostics;
@@ -12,7 +12,8 @@ namespace TaskbarGames.Games.Runner
     public sealed class RunnerGame : Form
     {
         // 모델과 UI 타이머는 창 수명에 종속된다. Stopwatch는 시스템 시각 변경과 무관한 경과 시간을 제공한다.
-        readonly RunnerSession session = new RunnerSession();
+        readonly RunnerSession session;
+        readonly GameStore store;
         readonly Timer timer = new Timer();
         readonly Stopwatch clock = Stopwatch.StartNew();
         double last;
@@ -33,6 +34,9 @@ namespace TaskbarGames.Games.Runner
         // Space는 시작/점프/재시작이며, 짧게 떼면 모델에 점프 높이 조정을 요청한다.
         public RunnerGame()
         {
+            store = GameEnvironment.Store;
+            session = new RunnerSession(new Random(), store.Data.RunnerBest);
+            FormClosing += delegate { SaveRecords(); };
             Text = "Taskbar_Games - Dino Runner"; Icon = ArcadeTheme.AppIcon;
             AutoScaleMode = AutoScaleMode.None; FormBorderStyle = FormBorderStyle.None;
             BackColor = TransparencyKey = Color.Magenta; TopMost = true;
@@ -59,21 +63,26 @@ namespace TaskbarGames.Games.Runner
             // 작업 영역 변경은 코스 초기화로 처리한다. 이동 중만 16ms, 정적인 대기/비활성은 250ms로 확인한다.
             // 멈춘 화면은 매 틱 다시 그리지 않고 입력·상태 변화 시에만 무효화한다.
             timer.Tick += delegate {
-                Rectangle area = Screen.PrimaryScreen.WorkingArea;
-                if (Left != area.Left || Bottom != area.Bottom || Width != area.Width / 2) { PositionGame(); session.ResetForLayout(); Invalidate(); }
+                Rectangle area = GameEnvironment.Display.WorkingArea;
+                if (Left != area.Left || Bottom != area.Bottom || Width != area.Width / 2) { PositionGame(); session.ResetForLayout(); SaveRecords(); Invalidate(); }
                 double now = clock.Elapsed.TotalSeconds;
                 bool moving = session.Active && session.Phase == RunnerPhase.Running;
                 session.Advance(now - last, Width); last = now;
+                if (moving && session.Phase == RunnerPhase.GameOver) SaveRecords();
                 timer.Interval = moving ? 16 : 250;
                 if (moving) Invalidate();
             };
             timer.Start();
         }
-        // 화면 폭의 절반과 높이 100px를 최소·최대 크기로 고정한다.
-        // 그림은 아래쪽에 붙고 위쪽의 투명 공간은 최대 점프를 수용한다.
+        // 충돌·종료·화면 변경 시 현재 달리는 중의 기록도 포함한다.
+        void SaveRecords()
+        {
+            store.Data.RunnerBest = Math.Max(store.Data.RunnerBest, Math.Max(session.Best, session.Score));
+            store.Save();
+        }
         void PositionGame()
         {
-            Rectangle area = Screen.PrimaryScreen.WorkingArea;
+            Rectangle area = GameEnvironment.Display.WorkingArea;
             MinimumSize = MaximumSize = new Size(area.Width / 2, 100);
             Bounds = new Rectangle(area.Left, area.Bottom - 100, area.Width / 2, 100);
         }

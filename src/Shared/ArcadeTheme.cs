@@ -90,7 +90,7 @@ namespace TaskbarGames.Shared
             MinimumSize = MaximumSize = new Size(92, 82);
             ClientSize = new Size(92, 82); BackColor = ArcadeTheme.Black;
             ShowInTaskbar = false; TopMost = true; DoubleBuffered = true;
-            Rectangle work = Screen.FromPoint(Cursor.Position).WorkingArea;
+            Rectangle work = GameEnvironment.Display.WorkingArea;
             Location = new Point(Math.Max(work.Left, Math.Min(Cursor.Position.X, work.Right - Width)),
                 Math.Max(work.Top, Math.Min(Cursor.Position.Y - Height, work.Bottom - Height)));
             for (int i = 0; i < Colors.Length; i++)

@@ -36,7 +36,7 @@ namespace TaskbarGames.Games.Runner
         public double Height { get; private set; }
         public double Distance { get; private set; }
         public int Best { get; private set; }
-        // 이동 10픽셀당 1점. Best는 이 객체 안에서 재시작할 때만 유지되며 파일에 저장하지 않는다.
+        // 이동 10픽셀당 1점. 저장된 최고 기록은 생성자로 받고, 파일 저장은 UI가 공통 저장 계층에 위임한다.
         public int Score { get { return (int)(Distance / 10); } }
         public double Speed { get { return InitialSpeed + (MaximumSpeed - InitialSpeed) * Math.Min(1, elapsed / AccelerationSeconds); } }
         // 목록 추가/삭제는 모델만 수행하도록 읽기 전용 래퍼를 제공한다.
@@ -44,7 +44,12 @@ namespace TaskbarGames.Games.Runner
         public IList<RunnerObstacle> Obstacles { get { return obstacles.AsReadOnly(); } }
         public RunnerSession() : this(new Random()) { }
         // 고정 시드 Random을 주입하면 테스트에서 동일한 장애물 순서를 재현할 수 있다.
-        public RunnerSession(Random source) { random = source; Phase = RunnerPhase.Ready; }
+        public RunnerSession(Random source) : this(source, 0) { }
+        public RunnerSession(Random source, int best)
+        {
+            if (source == null) throw new ArgumentNullException("source");
+            random = source; Best = Math.Max(0, best); Phase = RunnerPhase.Ready;
+        }
         // 비활성 입력은 무시한다. 대기/충돌 상태라면 점수·장애물·가속 시간을 초기화하고 시작한다.
         // 공중이거나 첫 물리 프레임 전이라도 위로 향하는 속도가 있으면 이중 점프를 막는다.
         public bool Jump()

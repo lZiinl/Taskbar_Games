@@ -96,8 +96,11 @@ namespace TaskbarGames.Games.Baseball
         // 실사용 난수 생성자를 사용한다. 테스트는 고정 시드 Random을 아래 생성자에 주입한다.
         public BaseballSession() : this(new Random()) { }
         // null 난수 공급자를 거부하고 첫 투구를 준비 상태로 초기화한다.
-        public BaseballSession(Random randomSource)
+        public BaseballSession(Random randomSource) : this(randomSource, 0, 0, 0, 0) { }
+        public BaseballSession(Random randomSource, int best, long score, int attempts, int hits)
         {
+            BestDistance = Math.Max(0, Math.Min(160, best)); Score = Math.Max(0, score);
+            Attempts = Math.Max(0, attempts); Hits = Math.Max(0, Math.Min(Attempts, hits));
             if (randomSource == null) throw new ArgumentNullException("randomSource");
             random = randomSource;
             ResetRound();
@@ -209,17 +212,19 @@ namespace TaskbarGames.Games.Baseball
 
         // 결과 단계 진입 시 한 번만 시도 횟수와 점수를 확정한다.
         // 비행 중 예상 점수가 누적되지 않도록 명중 처리와 점수 반영 시점을 분리한다.
+        public event Action AttemptCompleted;
         void CompleteAttempt()
         {
-            Attempts++;
+            if (Attempts < Int32.MaxValue) Attempts++;
             if (LastHit.Hit)
             {
-                Hits++;
-                Score += LastHit.Points;
+                if (Hits < Int32.MaxValue) Hits++;
+                Score = Score > Int64.MaxValue - LastHit.Points ? Int64.MaxValue : Score + LastHit.Points;
                 BestDistance = Math.Max(BestDistance, LastHit.Distance);
             }
             Phase = BaseballPhase.Result;
             Elapsed = 0;
+            if (AttemptCompleted != null) AttemptCompleted();
         }
     }
 }

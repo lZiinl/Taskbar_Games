@@ -1,177 +1,103 @@
-﻿// 다람쥐의 수치·다중 먹이·돌봄 우선순위·아이콘 메뉴와 화면 끝 버그를 검사한다.
-// persist=false 생성자를 사용해 실제 사용자 저장 파일을 읽거나 수정하지 않는다.
-
-using System;
+﻿using System;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
 using System.Reflection;
 using System.Windows.Forms;
 using TaskbarGames.Games.Pet;
+using TaskbarGames.Shared;
 
 public static class PetRegressionTests
 {
-    // 실패 조건을 설명하는 예외를 발생시킨다. 반환값 대신 예외를 써 PowerShell에서도 실패를 감지한다.
     static void Assert(bool value, string message) { if (!value) throw new Exception(message); }
-    // 모델 수치 → 행동/먹이 → 화면 그리기 → 다중 먹이/5개 제한/돌봄 → 양 끝 이동 → 팔레트/배치 순서로 검증한다.
+    static void Advance(PetBehavior pet, double seconds)
+    { for (int i = 0; i < (int)Math.Round(seconds * 10); i++) pet.Advance(0.1, 0, 1920); }
     public static void Run(string artifacts)
     {
-        PetSession session = new PetSession();
-        session.Advance(300);
-        Assert(Math.Abs(session.Fullness - 65) < 0.001, "Hunger decay is not time based.");
-        session.Advance(Double.NaN); session.Advance(Double.PositiveInfinity);
-        Assert(session.Fullness == 65, "Invalid time corrupted state.");
-        session.Advance(100000);
-        Assert(session.Fullness == 0 && session.Mood == 0, "Stats must have a floor.");
-        session.Feed(); session.Pet();
-        Assert(session.Fullness == 22 && session.Mood == 17 && session.Meals == 1, "Care should restore state.");
-        for (int i = 0; i < 10; i++) { session.Feed(); session.Pet(); }
-        Assert(session.Fullness == 100 && session.Mood == 100, "Stats must have a ceiling.");
+        PetSession stats = new PetSession(); stats.Advance(300);
+        Assert(Math.Abs(stats.Fullness - 65) < 0.001, "Hunger decay is not time based.");
+        stats.Advance(Double.NaN); stats.Advance(Double.PositiveInfinity);
+        Assert(stats.Fullness == 65, "Invalid time corrupted state.");
+        stats.Advance(100000); Assert(stats.Fullness == 0 && stats.Mood == 0, "Stats floor failed.");
+        stats.Feed(); stats.Pet(); Assert(stats.Fullness == 22 && stats.Mood == 17 && stats.Meals == 1, "Care reward failed.");
+        for (int i = 0; i < 10; i++) { stats.Feed(); stats.Pet(); }
+        Assert(stats.Fullness == 100 && stats.Mood == 100, "Stats ceiling failed.");
+        PetBehavior model = new PetBehavior(new PetSession(), new Random(42), 250);
+        model.Advance(60, 0, 1920);
+        Assert(model.Action == PetAction.Idle && model.Remaining == 60, "Initial idle should last two minutes.");
+        int eaten = 0; model.Ate += delegate { eaten++; };
+        model.AddFood(250 + 38 + 180, 0, 1920);
+        model.AddFood(250 + 38 - 36, 0, 1920);
+        model.AddFood(250 + 38 + 72, 0, 1920);
+        model.Advance(1, 0, 1920);
+        Assert(model.Stats.Meals == 1 && model.Food.Count == 2 && model.X == 214, "Nearest food was not eaten first.");
+        model.AddFood(252, 0, 1920); model.Advance(1, 0, 1920);
+        Assert(model.Action == PetAction.Eat && model.Stats.Meals == 1 && model.Food.Count == 3, "Food interrupted chewing.");
+        Assert(!model.Pet(), "Petting must not interrupt chewing.");
+        Advance(model, 70);
+        Assert(model.Stats.Meals == 4 && eaten == 4 && model.Food.Count == 0, "Acorn consumption duplicated or lost.");
+        for (int i = 0; i < 5; i++) Assert(model.AddFood(800 + i * 20, 0, 1920) != null, "Five acorns should fit.");
+        Assert(model.AddFood(900, 0, 1920) == null && model.Food.Count == 5, "Sixth acorn replaced food.");
+        Assert(model.Pet() && !model.Pet(), "Pet cooldown failed.");
+        double x = model.X; model.Advance(1, 0, 1920);
+        Assert(model.Action == PetAction.Love && model.X == x, "Food interrupted petting.");
+        model.Advance(4, 0, 1920); Assert(model.Action != PetAction.Love, "Petting did not end.");
+        model.ToggleSleep(); model.Advance(10, 0, 1920);
+        Assert(model.Action == PetAction.Sleep, "Food interrupted manual sleep.");
+        model.ToggleSleep(); model.Advance(0.1, 0, 1920);
+        Assert(model.Action == PetAction.Walk, "Waking did not resume food pursuit.");
+        PetBehavior jumping = new PetBehavior(new PetSession(), new Random(2), 0);
+        jumping.AddFood(38, 0, 1920); Assert(jumping.Jump() && !jumping.Jump(), "Jump stacked.");
+        jumping.Advance(0.25, 0, 1920);
+        Assert(jumping.JumpHeight >= 29 && jumping.Stats.Meals == 0, "Ate during jump.");
+        jumping.Advance(0.31, 0, 1920);
+        Assert(jumping.JumpAge < 0 && jumping.Stats.Meals == 1, "Landing did not consume acorn.");
+        PetBehavior edge = new PetBehavior(new PetSession(), new Random(3), -150);
+        edge.AddFood(-1, -1920, 0);
+        for (int i = 0; i < 100 && edge.Stats.Meals == 0; i++) edge.Advance(0.1, -1920, 0);
+        Assert(edge.X == -76 && edge.Stats.Meals == 1, "Negative-coordinate right-edge food unreachable.");
+        edge.SetBounds(0, 1920); Assert(edge.X == 0, "Display removal failed to clamp pet.");
+        edge.AddFood(1900, 0, 1920); edge.SetBounds(-1280, 0);
+        foreach (Acorn food in edge.Food) Assert(food.X >= -1242 && food.X <= -38, "Food not clamped after display change.");
+
         const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
         using (PetGame pet = (PetGame)Activator.CreateInstance(typeof(PetGame), flags, null, new object[] { false }, null))
-        using (Bitmap strip = new Bitmap(624, 110))
-        using (Graphics g = Graphics.FromImage(strip))
         {
-            // 실제 네이티브 창 생성 후 크기를 검사해야 Windows 최소 창 크기 보정으로 생긴 버그를 잡을 수 있다.
-            // 생성자 직후 ClientSize만 검사하면 실제 실행 때의 크기 확장을 놓친다.
-            IntPtr petHandle = pet.Handle;
-            Assert(pet.Bottom == Screen.PrimaryScreen.WorkingArea.Bottom, "Pet must stand on taskbar.");
-            Assert(pet.ClientSize == new Size(76, 56), "Pet footprint should be compact.");
-            MethodInfo advance = typeof(PetGame).GetMethod("AdvanceBehavior", flags);
-            MethodInfo setFood = typeof(PetGame).GetMethod("SetFoodTarget", flags);
-            FieldInfo action = typeof(PetGame).GetField("action", flags);
-            FieldInfo remaining = typeof(PetGame).GetField("remaining", flags);
-            FieldInfo petX = typeof(PetGame).GetField("x", flags);
-            PetSession actualSession = (PetSession)typeof(PetGame).GetField("session", flags).GetValue(pet);
-            advance.Invoke(pet, new object[] { 60.0 });
-            Assert((string)action.GetValue(pet) == "idle", "Initial rest should continue after one minute.");
-            double startX = (double)petX.GetValue(pet);
-            setFood.Invoke(pet, new object[] { startX + 180 });
-            advance.Invoke(pet, new object[] { 1.0 });
-            Assert((double)petX.GetValue(pet) > startX && actualSession.Meals == 0, "Pet must walk toward food before receiving it.");
-            for (int step = 0; step < 100; step++) advance.Invoke(pet, new object[] { 0.1 });
-            Assert(actualSession.Meals == 1, "A placed acorn should be eaten exactly once.");
-            setFood.Invoke(pet, new object[] { (double)Screen.PrimaryScreen.WorkingArea.Left });
-            for (int step = 0; step < 250; step++) advance.Invoke(pet, new object[] { 0.1 });
-            Assert(actualSession.Meals == 2, "Pet should find food to its left, including screen edges.");
-            remaining.SetValue(pet, 0.01); action.SetValue(pet, "walk");
-            advance.Invoke(pet, new object[] { 0.1 });
-            Assert((double)remaining.GetValue(pet) >= 60 && (double)remaining.GetValue(pet) <= 180, "Idle duration should be one to three minutes.");
-            g.Clear(Color.FromArgb(225, 231, 239));
-            string[] poses = { "idle", "walk", "idle", "eat", "sleep", "love" };
-            for (int i = 0; i < poses.Length; i++)
-            {
-                typeof(PetGame).GetField("action", flags).SetValue(pet, poses[i]);
-                typeof(PetGame).GetField("remaining", flags).SetValue(pet, 0.5);
-                using (Bitmap frame = new Bitmap(104, 88))
-                using (Graphics fg = Graphics.FromImage(frame))
-                {
-                    typeof(PetGame).GetMethod("OnPaint", flags).Invoke(pet, new object[] { new PaintEventArgs(fg, pet.ClientRectangle) });
-                    g.DrawImageUnscaled(frame, i * 104, 20);
-                }
-                g.DrawString(poses[i], SystemFonts.DefaultFont, Brushes.Black, i * 104 + 12, 2);
-            }
-            strip.Save(Path.Combine(artifacts, "squirrel-poses.png"), ImageFormat.Png);
+            IntPtr handle = pet.Handle;
+            Assert(pet.ClientSize == new Size(76, 56) && pet.Bottom == Screen.PrimaryScreen.WorkingArea.Bottom, "Native pet footprint changed.");
+            PetBehavior behavior = (PetBehavior)typeof(PetGame).GetField("behavior", flags).GetValue(pet);
+            MethodInfo key = typeof(PetGame).GetMethod("OnPetKeyDown", flags);
+            typeof(PetGame).GetField("focused", flags).SetValue(pet, false);
+            key.Invoke(pet, new object[] { pet, new KeyEventArgs(Keys.Space) });
+            Assert(behavior.JumpAge < 0, "Inactive pet jumped.");
+            typeof(PetGame).GetField("focused", flags).SetValue(pet, true);
+            typeof(PetGame).GetField("jumpHeld", flags).SetValue(pet, false);
+            key.Invoke(pet, new object[] { pet, new KeyEventArgs(Keys.Space) });
+            behavior.Advance(0.25, Screen.PrimaryScreen.WorkingArea.Left, Screen.PrimaryScreen.WorkingArea.Right);
+            typeof(PetGame).GetMethod("PositionPet", flags).Invoke(pet, null);
+            Assert(pet.Bottom <= Screen.PrimaryScreen.WorkingArea.Bottom - 29, "Native jump position wrong.");
+            key.Invoke(pet, new object[] { pet, new KeyEventArgs(Keys.Space) });
+            Assert(behavior.JumpAge == 0.25, "Key repeat restarted jump.");
+            typeof(Form).GetMethod("OnDeactivate", flags).Invoke(pet, new object[] { EventArgs.Empty });
+            Assert(behavior.JumpAge < 0 && pet.Bottom == Screen.PrimaryScreen.WorkingArea.Bottom, "Focus loss did not cancel jump.");
             typeof(PetGame).GetMethod("UpdateStatus", flags).Invoke(pet, null);
             ToolStripDropDown menu = (ToolStripDropDown)typeof(PetGame).GetField("menu", flags).GetValue(pet);
-            menu.PerformLayout();
-            Assert(menu.Items.Count == 5 && menu.Width <= 140 && menu.Height <= 40, "Pet menu must be a compact row of five icons.");
-            using (Bitmap menuImage = new Bitmap(menu.Width, menu.Height))
+            menu.PerformLayout(); Assert(menu.Items.Count == 5 && menu.Size == new Size(130, 34), "Pet menu changed size.");
+            using (Bitmap image = new Bitmap(menu.Width, menu.Height))
+            { menu.DrawToBitmap(image, menu.ClientRectangle); image.Save(Path.Combine(artifacts, "pet-menu.png")); }
+            using (Bitmap strip = new Bitmap(624, 110))
+            using (Graphics g = Graphics.FromImage(strip))
             {
-                menu.DrawToBitmap(menuImage, menu.ClientRectangle);
-                menuImage.Save(Path.Combine(artifacts, "pet-menu.png"), ImageFormat.Png);
+                g.Clear(Color.FromArgb(225, 231, 239));
+                string[] poses = { "idle", "walk", "jump", "eat", "sleep", "love" };
+                for (int i = 0; i < poses.Length; i++)
+                {
+                    typeof(PetGame).GetMethod("DrawSquirrel", BindingFlags.Static | BindingFlags.NonPublic).Invoke(null,
+                        new object[] { g, i * 104 + 24, 40, true, poses[i], 0.5, 1 });
+                    g.DrawString(poses[i], SystemFonts.DefaultFont, Brushes.Black, i * 104 + 12, 2);
+                }
+                strip.Save(Path.Combine(artifacts, "squirrel-poses.png"));
             }
-        }
-        using (PetGame pet = (PetGame)Activator.CreateInstance(typeof(PetGame), flags, null, new object[] { false }, null))
-        {
-            MethodInfo add = typeof(PetGame).GetMethod("SetFoodTarget", flags);
-            MethodInfo step = typeof(PetGame).GetMethod("AdvanceBehavior", flags);
-            FieldInfo position = typeof(PetGame).GetField("x", flags);
-            FieldInfo action = typeof(PetGame).GetField("action", flags);
-            // 다른 거리의 먹이를 놓아 입력 순서가 아니라 가장 가까운 것을 먼저 먹는지 확인한다.
-            double origin = Screen.PrimaryScreen.WorkingArea.Left + 250;
-            position.SetValue(pet, origin);
-            add.Invoke(pet, new object[] { origin + 38 + 180 });
-            add.Invoke(pet, new object[] { origin + 38 - 36 });
-            add.Invoke(pet, new object[] { origin + 38 + 72 });
-            System.Collections.ICollection food = (System.Collections.ICollection)typeof(PetGame).GetField("food", flags).GetValue(pet);
-            Assert(food.Count == 3, "New acorns must preserve existing acorns.");
-            step.Invoke(pet, new object[] { 1.0 });
-            PetSession state = (PetSession)typeof(PetGame).GetField("session", flags).GetValue(pet);
-            Assert(state.Meals == 1 && food.Count == 2 && Math.Abs((double)position.GetValue(pet) - origin + 36) < 0.1,
-                "Pet must eat nearest acorn first rather than first or last placed.");
-            add.Invoke(pet, new object[] { origin + 38 - 36 });
-            step.Invoke(pet, new object[] { 1.0 });
-            Assert(state.Meals == 1 && food.Count == 3 && (string)action.GetValue(pet) == "eat", "Adding food must not interrupt chewing.");
-            for (int i = 0; i < 700; i++) step.Invoke(pet, new object[] { 0.1 });
-            // 목록에서 제거와 점수 반영이 중복되지 않는지 전체 먹이 소진 후 확인한다.
-            Assert(state.Meals == 4 && food.Count == 0, "Every queued acorn must be eaten exactly once.");
-            for (int i = 0; i < 5; i++) Assert((bool)add.Invoke(pet, new object[] { origin + 100 + i * 20 }), "Five acorns should be allowed.");
-            Assert(!(bool)add.Invoke(pet, new object[] { origin + 250 }) && food.Count == 5, "Sixth acorn must be rejected without removing existing food.");
-            typeof(PetGame).GetMethod("Stroke", flags).Invoke(pet, null);
-            double beforeCare = (double)position.GetValue(pet);
-            step.Invoke(pet, new object[] { 1.0 });
-            Assert((string)action.GetValue(pet) == "love" && (double)position.GetValue(pet) == beforeCare && food.Count == 5,
-                "Petting must interrupt food pursuit and keep queued acorns.");
-            step.Invoke(pet, new object[] { 4.0 });
-            Assert((string)action.GetValue(pet) != "love", "Pet must resume pursuit after petting.");
-            // Move away from any food so sleeping tests pursuit rather than chewing.
-            action.SetValue(pet, "walk");
-            typeof(PetGame).GetMethod("StartAction", flags).Invoke(pet, new object[] { "sleep", 300.0 });
-            step.Invoke(pet, new object[] { 10.0 });
-            Assert((string)action.GetValue(pet) == "sleep", "Manual sleep must take precedence over queued food.");
-        }
-        using (PetGame pet = (PetGame)Activator.CreateInstance(typeof(PetGame), flags, null, new object[] { false }, null))
-        {
-            IntPtr handle = pet.Handle;
-            Rectangle area = Screen.PrimaryScreen.WorkingArea;
-            FieldInfo position = typeof(PetGame).GetField("x", flags);
-            FieldInfo action = typeof(PetGame).GetField("action", flags);
-            MethodInfo add = typeof(PetGame).GetMethod("SetFoodTarget", flags);
-            MethodInfo step = typeof(PetGame).GetMethod("AdvanceBehavior", flags);
-            PetSession state = (PetSession)typeof(PetGame).GetField("session", flags).GetValue(pet);
-            position.SetValue(pet, (double)area.Right - 160);
-            add.Invoke(pet, new object[] { (double)area.Right - 1 });
-            for (int i = 0; i < 50 && state.Meals == 0; i++) step.Invoke(pet, new object[] { 0.1 });
-            Assert(state.Meals == 1 && pet.Right == area.Right, "Native pet window must reach and eat right-edge acorn.");
-            action.SetValue(pet, "walk");
-            position.SetValue(pet, (double)area.Left + 100);
-            add.Invoke(pet, new object[] { (double)area.Left });
-            for (int i = 0; i < 50 && state.Meals == 1; i++) step.Invoke(pet, new object[] { 0.1 });
-            Assert(state.Meals == 2 && pet.Left == area.Left, "Native pet window must reach and eat left-edge acorn.");
-        }
-        // 점프는 먹이 추적과 함께 진행되며 공중 섭취·키 자동 반복·포커스 밖 입력은 막는다.
-        using (PetGame pet = (PetGame)Activator.CreateInstance(typeof(PetGame), flags, null, new object[] { false }, null))
-        {
-            IntPtr handle = pet.Handle;
-            MethodInfo key = typeof(PetGame).GetMethod("OnPetKeyDown", flags);
-            MethodInfo step = typeof(PetGame).GetMethod("AdvanceBehavior", flags);
-            FieldInfo age = typeof(PetGame).GetField("jumpAge", flags);
-            FieldInfo held = typeof(PetGame).GetField("jumpHeld", flags);
-            FieldInfo focus = typeof(PetGame).GetField("focused", flags);
-            focus.SetValue(pet, false);
-            key.Invoke(pet, new object[] { pet, new KeyEventArgs(Keys.Space) });
-            Assert((double)age.GetValue(pet) < 0, "Inactive pet must not jump.");
-            focus.SetValue(pet, true); held.SetValue(pet, false);
-            double center = (double)typeof(PetGame).GetField("x", flags).GetValue(pet) + 38;
-            typeof(PetGame).GetMethod("SetFoodTarget", flags).Invoke(pet, new object[] { center });
-            key.Invoke(pet, new object[] { pet, new KeyEventArgs(Keys.Space) });
-            step.Invoke(pet, new object[] { 0.25 });
-            PetSession state = (PetSession)typeof(PetGame).GetField("session", flags).GetValue(pet);
-            Assert(pet.Bottom <= Screen.PrimaryScreen.WorkingArea.Bottom - 29 && state.Meals == 0,
-                "Jump should lift pet without eating food in midair.");
-            key.Invoke(pet, new object[] { pet, new KeyEventArgs(Keys.Space) });
-            Assert((double)age.GetValue(pet) == 0.25, "Held Space must not restart jump.");
-            step.Invoke(pet, new object[] { 0.31 });
-            Assert((double)age.GetValue(pet) < 0 && pet.Bottom == Screen.PrimaryScreen.WorkingArea.Bottom && state.Meals == 1,
-                "Pet should land and then eat the waiting acorn.");
-            typeof(PetGame).GetField("action", flags).SetValue(pet, "idle");
-            held.SetValue(pet, false);
-            key.Invoke(pet, new object[] { pet, new KeyEventArgs(Keys.Space) });
-            step.Invoke(pet, new object[] { 0.1 });
-            typeof(Form).GetMethod("OnDeactivate", flags).Invoke(pet, new object[] { EventArgs.Empty });
-            Assert((double)age.GetValue(pet) < 0 && pet.Bottom == Screen.PrimaryScreen.WorkingArea.Bottom,
-                "Focus loss must return pet safely to the ground.");
         }
         // 작은 도토리 표시 창도 실제 핸들을 생성하여 네이티브 크기가 의도한 16×16인지 검사한다.
         Type markerType = typeof(PetGame).Assembly.GetType("TaskbarGames.Games.Pet.AcornMarker");

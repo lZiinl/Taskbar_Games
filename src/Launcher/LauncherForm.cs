@@ -18,6 +18,7 @@ namespace TaskbarGames.Launcher
         // shuttingDown은 종료 도중 게임의 FormClosed가 런처를 다시 표시하지 않게 하는 보호 플래그다.
         Form activeGame;
         bool shuttingDown;
+        readonly Timer displayTimer = new Timer();
         readonly ToolTip hints = new ToolTip();
         readonly ContextMenuStrip menu = new ContextMenuStrip();
 
@@ -29,8 +30,8 @@ namespace TaskbarGames.Launcher
             Icon = ArcadeTheme.AppIcon;
             AutoScaleMode = AutoScaleMode.None;
             FormBorderStyle = FormBorderStyle.None;
-            MinimumSize = MaximumSize = new Size(58, 74);
-            ClientSize = new Size(58, 74);
+            MinimumSize = MaximumSize = GameEnvironment.SelectionSize;
+            ClientSize = GameEnvironment.SelectionSize;
             BackColor = ArcadeTheme.Black;
             TopMost = true;
             StartPosition = FormStartPosition.Manual;
@@ -63,9 +64,24 @@ namespace TaskbarGames.Launcher
             hints.SetToolTip(fortress, "포트리스 · SPACE 길게 눌러 거리 조절");
             hints.SetToolTip(baseball, "야구 · SPACE로 스윙");
             ArcadeTheme.Style(menu);
+            menu.Items.Add("모니터 선택", null, delegate {
+                Hide();
+                using (MonitorSelectionForm picker = new MonitorSelectionForm()) picker.ShowDialog();
+                Show(); Activate();
+            });
+            menu.Items.Add("기록 / 저장 상태", null, delegate {
+                GameData records = GameEnvironment.Store.Data;
+                MessageBox.Show(this, String.Format("공룡 러너 · 최고 {0}점\n야구 · 최고 {1}m · 누적 {2}점 · {3}/{4} 안타\n포트리스 · {5}/{6} 명중 · 최고 {7}콤보\n\n{8}",
+                    records.RunnerBest, records.BaseballBestDistance, records.BaseballScore, records.BaseballHits, records.BaseballAttempts,
+                    records.FortressHits, records.FortressShots, records.FortressBestCombo,
+                    GameEnvironment.Store.Error.Length == 0 ? "기록과 설정을 자동 저장합니다." : GameEnvironment.Store.Error), "기록 / 저장 상태");
+            });
             menu.Items.Add("종료 (Esc)", null, delegate { Close(); });
             ContextMenuStrip = fortress.ContextMenuStrip = baseball.ContextMenuStrip = pet.ContextMenuStrip = runner.ContextMenuStrip = menu;
             PositionAboveTaskbar();
+            displayTimer.Interval = 500;
+            displayTimer.Tick += delegate { if (Visible) PositionAboveTaskbar(); };
+            displayTimer.Start();
         }
 
         // 자식 버튼이 포커스를 가져도 Esc를 먼저 처리한다.
@@ -77,12 +93,9 @@ namespace TaskbarGames.Launcher
             return base.ProcessCmdKey(ref msg, keyData);
         }
 
-        // WorkingArea는 작업표시줄을 제외한 영역이다. 그 오른쪽·아래쪽에서 8픽셀을 띄운다.
-        // 작업표시줄 위치가 바뀐 뒤에도 표시 시점에 이 값을 다시 읽는다.
         void PositionAboveTaskbar()
         {
-            Rectangle area = Screen.PrimaryScreen.WorkingArea;
-            Location = new Point(area.Right - Width - 8, area.Bottom - Height - 8);
+            Location = GameEnvironment.SelectionLocation(Size);
         }
 
         // 게임 종료 후 런처가 다시 보일 때 현재 작업 영역 기준으로 위치를 보정한다.
@@ -150,6 +163,7 @@ namespace TaskbarGames.Launcher
             {
                 shuttingDown = true;
                 if (activeGame != null) { activeGame.Dispose(); activeGame = null; }
+                displayTimer.Dispose();
                 hints.Dispose();
                 menu.Dispose();
             }

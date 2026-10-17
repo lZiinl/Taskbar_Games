@@ -1,4 +1,4 @@
-﻿// 포트리스의 입력·탄도 진행·명중 판정·픽셀 효과·색상 저장을 담당한다.
+﻿// 포트리스 UI: 입력과 렌더링을 FortressSession 및 공통 저장에 연결한다.
 // 게임 논리 좌표는 화면 픽셀을 GameScale로 나눈 값이며, 픽셀 글꼴은 화면 정수 좌표로 따로 그린다.
 
 using System;
@@ -6,8 +6,6 @@ using System.Diagnostics;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
-using System.IO;
-using Microsoft.Win32;
 using System.Windows.Forms;
 using TaskbarGames.Shared;
 
@@ -18,9 +16,6 @@ namespace TaskbarGames.Games.Fortress
         // Rendering, mouse input and physics share compact logical coordinates.
         const float GameScale = 0.60f;
         const float TankOriginX = 55; // Center of the tank tracks is position 0.
-        const double FullChargeSeconds = 2.0;
-        const string SettingsKey = @"Software\TaskbarFortress";
-        readonly string legacyColorPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "tank-color.txt");
         Color tankBase = Color.FromArgb(93, 184, 106);
         Color tankLight = Color.FromArgb(184, 246, 153);
         Color tankShadow = Color.FromArgb(48, 105, 79);
@@ -30,7 +25,8 @@ namespace TaskbarGames.Games.Fortress
         float WorldWidth { get { return ClientSize.Width / GameScale; } }
         readonly Timer timer = new Timer();
         readonly Stopwatch clock = Stopwatch.StartNew();
-        readonly Random random = new Random();
+        readonly FortressSession session;
+        readonly GameStore store;
         readonly Color ink = ArcadeTheme.Black;
         readonly Color green = ArcadeTheme.Neon;
         // 탱크 문자 스프라이트. DrawPixelSprite에서 색상 코드별로 기본색·명암·윤곽을 해석한다.
@@ -66,14 +62,11 @@ namespace TaskbarGames.Games.Fortress
         };
         // HUD 논리 영역과 포구/포탄/과녁 좌표. 지면 역시 논리 Y값이다.
         Rectangle panel;
-        PointF muzzle, projectile;
-        float ground, targetX;
-        // lastTime/resultUntil은 Stopwatch 기준 초, flightTime은 이번 발사 후 초다.
-        // charge는 0~1, speed와 shotGravity는 해당 발사 거리에서 역산한 값이다.
-        double lastTime, flightTime, speed, charge, resultUntil, shotGravity;
-        bool charging, flying, focused, wasHit;
-        string result = "";
-        int hits, shots, combo;
+        PointF muzzle;
+        float ground;
+        // 게임 상태는 session이 소유하고 창은 갱신 시각과 장식 효과만 관리한다.
+        double lastTime;
+        bool focused;
         // 명중 파편 하나의 위치·속도·크기·수명·색상. 게임 판정과 무관한 장식 효과다.
         sealed class Debris
         {
@@ -94,7 +87,8 @@ namespace TaskbarGames.Games.Fortress
         // Tests can exercise a real form without reading or migrating user settings.
         // 테스트에서는 false로 레지스트리/레거시 파일 접근을 피한다.
         // 투명 창·입력·포커스 전환·타이머를 구성하며 포커스를 잃으면 충전 상태를 버린다.
-        internal FortressGame(bool loadSettings)
+        internal FortressGame(bool loadSettings) : this(loadSettings ? GameEnvironment.Store : new GameStore()) { }
+        public FortressGame(GameStore storage)
         {
             Text = "Taskbar_Games - Fortress";
             Icon = ArcadeTheme.AppIcon;
@@ -106,7 +100,11 @@ namespace TaskbarGames.Games.Fortress
             DoubleBuffered = true;
             KeyPreview = true;
             StartPosition = FormStartPosition.Manual;
-            if (loadSettings) LoadTankColor();
+            store = storage;
+            session = new FortressSession(new Random(), store.Data.FortressHits, store.Data.FortressShots, store.Data.FortressBestCombo);
+            session.ShotFinished += OnShotFinished;
+            SetTankColor(Color.FromArgb((store.Data.TankColor >> 16) & 255, (store.Data.TankColor >> 8) & 255, store.Data.TankColor & 255));
+            FormClosing += delegate { SaveRecords(); };
             ResetLayout();
             Activated += delegate {
                 focused = true;
@@ -115,8 +113,7 @@ namespace TaskbarGames.Games.Fortress
             };
             Deactivate += delegate {
                 focused = false;
-                charging = false;
-                charge = 0;
+                session.CancelCharge();
                 waitForSpaceRelease = true;
                 UpdateTimerInterval(clock.Elapsed.TotalSeconds);
                 Invalidate();
@@ -129,30 +126,15 @@ namespace TaskbarGames.Games.Fortress
             timer.Start();
         }
 
-        // 작업 영역을 재계산하고 진행 중인 충전/발사/파편/결과를 취소한다.
-        // 기존 화면 좌표를 새 해상도에서 재사용하지 않도록 포구와 과녁도 다시 설정한다.
         void ResetLayout()
         {
-            Bounds = Screen.PrimaryScreen.WorkingArea;
+            Bounds = GameEnvironment.Display.WorkingArea;
             ground = (ClientSize.Height - 2) / GameScale;
             muzzle = new PointF(87, ground - 29);
             panel = new Rectangle(126, (int)ground - 24, 200, 24);
             UpdatePanelLayout();
-            charging = flying = false;
-            charge = 0;
-            result = "";
             debris.Clear();
-            NewTarget();
-        }
-
-        // 탱크 이후 가용 폭의 10~80% 구간에서 생성하되 HUD 오른쪽 최소 여백을 우선한다.
-        // 좁은 화면에서도 Random 범위가 음수가 되지 않도록 오른쪽 끝을 왼쪽 이상으로 보정한다.
-        void NewTarget()
-        {
-            float span = WorldWidth - TankOriginX;
-            float left = Math.Max(TankOriginX + span * 0.10f, MinimumTargetX());
-            float right = Math.Max(left, TankOriginX + span * 0.80f);
-            targetX = left + (float)random.NextDouble() * (right - left);
+            session.ResetLayout(WorldWidth, ground, muzzle, MinimumTargetX());
         }
 
         // 표시할 숫자 자릿수에 맞춰 점수판 너비를 산정한다. 글자 폭과 닫기 영역 여백을 합친다.
@@ -164,7 +146,7 @@ namespace TaskbarGames.Games.Fortress
         // 현재 명중/발사 횟수로 점수판 폭을 갱신한다. 과녁 배치 보정은 별도 함수에서 처리한다.
         void UpdatePanelLayout()
         {
-            panel.Width = ScorePanelWidth(hits, shots);
+            panel.Width = ScorePanelWidth(session.Hits, session.Shots);
         }
 
         // 다음 발사·명중으로 숫자 자릿수가 늘어날 때의 HUD 폭까지 미리 확보한다.
@@ -173,7 +155,8 @@ namespace TaskbarGames.Games.Fortress
         {
             // Reserve the next shot's digits before aiming. The sprite is 24 device
             // pixels wide; leave another 8 pixels between it and the score panel.
-            int nextPanelRight = panel.X + ScorePanelWidth(hits + 1, shots + 1);
+            int nextPanelRight = panel.X + ScorePanelWidth(session.Hits == Int32.MaxValue ? session.Hits : session.Hits + 1,
+                session.Shots == Int32.MaxValue ? session.Shots : session.Shots + 1);
             return Math.Max(panel.Right, nextPanelRight) + (12 + 8) / GameScale;
         }
 
@@ -181,11 +164,11 @@ namespace TaskbarGames.Games.Fortress
         // 결과 문구의 만료가 더 가까우면 그 시각에 맞춰 깨어나게 한다.
         void UpdateTimerInterval(double now)
         {
-            bool animating = (charging && charge < 1) || flying || debris.Count > 0;
+            bool animating = (session.Charging && session.Charge < 1) || session.Flying || debris.Count > 0;
             // A slow idle poll still catches taskbar/work-area changes. Static
-            // result labels only need a wakeup when their display time expires.
-            timer.Interval = animating ? 16 : result.Length > 0
-                ? Math.Max(1, Math.Min(250, (int)Math.Ceiling((resultUntil - now) * 1000)))
+            // session.Result labels only need a wakeup when their display time expires.
+            timer.Interval = animating ? 16 : session.Result.Length > 0
+                ? Math.Max(1, Math.Min(250, (int)Math.Ceiling(session.ResultRemaining * 1000)))
                 : 250;
         }
 
@@ -206,107 +189,53 @@ namespace TaskbarGames.Games.Fortress
             Focus();
         }
 
-        // 색상 선택 중에는 입력을 무시한다. Space의 첫 눌림은 대기 상태에서만 충전을 시작한다.
-        // 키 반복·포커스 복귀 잠금·비행 중 재발사를 모두 차단한다.
         void OnKeyDown(object sender, KeyEventArgs e)
         {
             if (choosingColor) return;
             if (e.KeyCode == Keys.Escape) { Close(); return; }
             if (e.KeyCode != Keys.Space) return;
             e.Handled = e.SuppressKeyPress = true;
-            if (waitForSpaceRelease) return;
-            if (!charging && !flying && result.Length == 0)
+            if (waitForSpaceRelease || !focused) return;
+            if (session.BeginCharge(MinimumTargetX()))
             {
-                targetX = Math.Max(targetX, MinimumTargetX());
-                charging = true;
-                charge = 0;
                 lastTime = clock.Elapsed.TotalSeconds;
-                UpdateTimerInterval(lastTime);
-                Invalidate();
+                UpdateTimerInterval(lastTime); Invalidate();
             }
         }
 
-        // 키를 떼면 잠금을 풀고, 충전 중이었다면 0~1 힘을 가용 사거리로 변환한다.
-        // 같은 거리에서 속력과 중력을 함께 계산해 포구 높이를 포함한 착지점을 유지한다.
         void OnKeyUp(object sender, KeyEventArgs e)
         {
             if (e.KeyCode != Keys.Space) return;
-            e.Handled = e.SuppressKeyPress = true;
-            waitForSpaceRelease = false;
-            if (!charging) return;
-            charging = false;
-            double maxRange = WorldWidth - muzzle.X;
-            double minRange = Math.Min(70, maxRange);
-            double range = minRange + charge * (maxRange - minRange);
-            speed = Ballistics.SpeedForRange(range, ground - muzzle.Y);
-            shotGravity = Ballistics.GravityForRange(range, ground - muzzle.Y);
-            flightTime = 0;
-            projectile = muzzle;
-            flying = true;
-            shots++;
-            UpdatePanelLayout();
-            lastTime = clock.Elapsed.TotalSeconds;
-            UpdateTimerInterval(lastTime);
-            Invalidate();
+            e.Handled = e.SuppressKeyPress = true; waitForSpaceRelease = false;
+            if (!session.ReleaseCharge()) return;
+            SaveRecords(); UpdatePanelLayout(); lastTime = clock.Elapsed.TotalSeconds;
+            UpdateTimerInterval(lastTime); Invalidate();
         }
 
-        // 최대 0.05초 단위로 시간 진행을 제한하고 충전·탄도·파편·결과 만료를 갱신한다.
-        // 변화가 없는 대기는 Invalidate를 호출하지 않아 정적인 화면의 CPU 사용을 줄인다.
         void Tick(object sender, EventArgs e)
         {
             double now = clock.Elapsed.TotalSeconds;
-            double dt = Math.Min(0.05, now - lastTime);
-            lastTime = now;
+            double elapsed = Math.Max(0, now - lastTime); lastTime = now;
             bool changed = false;
-            if (Bounds != Screen.PrimaryScreen.WorkingArea) { ResetLayout(); changed = true; }
-            if (charging && charge < 1)
-            {
-                charge = Math.Min(1, charge + dt / FullChargeSeconds);
-                changed = true;
-            }
-            if (flying)
-            {
-                changed = true;
-                // Small physics steps prevent a fast shell from skipping the target.
-                // 한 틱도 약 4ms 이하로 쪼개 검사해 고속 포탄이 과녁을 지나쳐 명중을 놓치는 것을 줄인다.
-                int steps = Math.Max(1, (int)Math.Ceiling(dt / 0.004));
-                for (int i = 0; i < steps && flying; i++)
-                {
-                    flightTime += dt / steps;
-                    projectile = Ballistics.Position(muzzle, speed, flightTime, shotGravity);
-                    double dx = projectile.X - targetX, dy = projectile.Y - (ground - 19);
-                    if (dx * dx + dy * dy <= 23 * 23) Finish(true, now);
-                    else if (projectile.Y >= ground || projectile.X > WorldWidth + 10) Finish(false, now);
-                }
-            }
-            if (debris.Count > 0) { UpdateDebris(dt); changed = true; }
-            if (result.Length > 0 && now >= resultUntil)
-            {
-                if (wasHit) NewTarget();
-                result = "";
-                charge = 0;
-                changed = true;
-            }
+            if (Bounds != GameEnvironment.Display.WorkingArea) { ResetLayout(); changed = true; }
+            changed = session.Advance(elapsed, MinimumTargetX()) || changed;
+            if (debris.Count > 0) { UpdateDebris(Math.Min(0.05, elapsed)); changed = true; }
             UpdateTimerInterval(now);
             if (changed) Invalidate();
         }
 
-        // 비행을 멈추고 명중이면 횟수/콤보/파편을 갱신한다. 빗나가면 콤보만 초기화한다.
-        // 결과를 1.2초 유지한 뒤 명중한 경우에만 새로운 과녁을 만든다.
-        void Finish(bool hit, double now)
+        void OnShotFinished(bool hit)
         {
-            flying = false;
-            wasHit = hit;
-            if (hit)
-            {
-                hits++;
-                UpdatePanelLayout();
-                combo++;
-                BurstTarget();
-            }
-            else combo = 0;
-            result = hit ? "HIT" : "MISS";
-            resultUntil = now + 1.2;
+            UpdatePanelLayout();
+            if (hit) BurstTarget();
+            SaveRecords();
+        }
+        void SaveRecords()
+        {
+            store.Data.FortressHits = session.Hits;
+            store.Data.FortressShots = session.Shots;
+            store.Data.FortressBestCombo = session.BestCombo;
+            store.Save();
         }
 
         // 과녁 주변에 28개 파편을 만든다. 별도 effectRandom을 써 장식 난수가 다음 과녁 위치를 바꾸지 않게 한다.
@@ -317,7 +246,7 @@ namespace TaskbarGames.Games.Fortress
                 Color.FromArgb(166, 43, 66), Color.FromArgb(255, 218, 123) };
             for (int i = 0; i < 28; i++)
                 debris.Add(new Debris {
-                    X = targetX + (float)(effectRandom.NextDouble() * 30 - 15),
+                    X = session.TargetX + (float)(effectRandom.NextDouble() * 30 - 15),
                     Y = ground - 19 + (float)(effectRandom.NextDouble() * 24 - 12),
                     VX = (float)(effectRandom.NextDouble() * 200 - 100),
                     VY = -(float)(80 + effectRandom.NextDouble() * 160),
@@ -350,7 +279,7 @@ namespace TaskbarGames.Games.Fortress
             Graphics g = e.Graphics;
             g.ScaleTransform(GameScale, GameScale);
             g.SmoothingMode = SmoothingMode.None;
-            string score = String.Format("{0} HIT / {1} SHOTS", hits, shots);
+            string score = String.Format("{0} HIT / {1} SHOTS", session.Hits, session.Shots);
             PixelRect(g, ink, panel.X, panel.Y, panel.Width, panel.Height);
             DrawPixelText(g, score, 1, focused ? green : Color.LightGray, panel.X + 6, panel.Y + 6);
             PixelRect(g, Color.FromArgb(53, 67, 86), panel.Right - 24, panel.Y + 3, 2, panel.Height - 6);
@@ -359,14 +288,14 @@ namespace TaskbarGames.Games.Fortress
             // A narrow power column sits beside the tank, filling from the ground up.
             Rectangle meter = new Rectangle(100, (int)ground - 44, 13, 42);
             PixelRect(g, ink, meter.X - 3, meter.Y - 3, meter.Width + 6, meter.Height + 6);
-            int lit = (int)Math.Ceiling(charge * 8);
+            int lit = (int)Math.Ceiling(session.Charge * 8);
             for (int i = 0; i < 8; i++)
             {
                 Color segment = i < lit ? (i >= 6 ? Color.FromArgb(255, 195, 98) : green) : Color.FromArgb(53, 67, 86);
                 PixelRect(g, segment, meter.X, meter.Bottom - (i + 1) * 5, meter.Width, 3);
             }
 
-            string hint = !focused ? "CLICK TANK" : charging ? ((int)(charge * 100)) + "%" : flying || result.Length > 0 ? "" : "HOLD SPACE";
+            string hint = !focused ? "CLICK TANK" : session.Charging ? ((int)(session.Charge * 100)) + "%" : session.Flying || session.Result.Length > 0 ? "" : "HOLD SPACE";
             if (hint.Length > 0)
             {
                 PixelRect(g, ink, panel.X, ground - 47, TextWidth(hint, 1) + 12, 21);
@@ -374,34 +303,34 @@ namespace TaskbarGames.Games.Fortress
             }
 
             DrawPixelSprite(g, TankPixels, TankOriginX, ground);
-            if (!(wasHit && result.Length > 0)) DrawPixelSprite(g, TargetPixels, targetX, ground);
+            if (!(session.WasHit && session.Result.Length > 0)) DrawPixelSprite(g, TargetPixels, session.TargetX, ground);
             foreach (Debris p in debris)
             {
                 float size = p.Age > p.Lifetime * 0.65 ? 1 / GameScale : p.Size;
                 PixelRect(g, p.Color, p.X - size / 2, p.Y - size / 2, size, size);
             }
-            if (flying)
+            if (session.Flying)
             {
                 for (int i = 5; i >= 0; i--)
                 {
-                    double t = Math.Max(0, flightTime - i * 0.025);
-                    PointF p = Ballistics.Position(muzzle, speed, t, shotGravity);
+                    double t = Math.Max(0, session.FlightTime - i * 0.025);
+                    PointF p = Ballistics.Position(muzzle, session.Speed, t, session.Gravity);
                     float radius = i == 0 ? 5 : 2;
                     PixelRect(g, i == 0 ? ink : Color.FromArgb(154, 171, 190), p.X - radius, p.Y - radius, radius * 2, radius * 2);
                     if (i == 0) PixelRect(g, Color.FromArgb(255, 218, 123), p.X - 3, p.Y - 3, 6, 6);
                 }
             }
-            if (result.Length > 0)
+            if (session.Result.Length > 0)
             {
-                SizeF size = new SizeF(TextWidth(result, 1), 7 / GameScale);
-                string comboText = wasHit && combo >= 2 ? combo + " COMBO" : "";
+                SizeF size = new SizeF(TextWidth(session.Result, 1), 7 / GameScale);
+                string comboText = session.WasHit && session.Combo >= 2 ? session.Combo + " COMBO" : "";
                 float labelWidth = Math.Max(size.Width, TextWidth(comboText, 1));
-                float x = targetX + 31;
+                float x = session.TargetX + 31;
                 if (x + labelWidth + 6 > WorldWidth)
-                    x = targetX - 31 - labelWidth;
+                    x = session.TargetX - 31 - labelWidth;
                 float y = ground - 19 - size.Height / 2;
                 PixelRect(g, ink, x - 6, y - 4, size.Width + 12, size.Height + 8);
-                DrawPixelText(g, result, 1, wasHit ? green : Color.FromArgb(255, 135, 141), x, y);
+                DrawPixelText(g, session.Result, 1, session.WasHit ? green : Color.FromArgb(255, 135, 141), x, y);
                 if (comboText.Length > 0)
                 {
                     PixelRect(g, ink, x - 6, y - 25, labelWidth + 12, 19);
@@ -522,72 +451,22 @@ namespace TaskbarGames.Games.Fortress
             tankShadow = Color.FromArgb(tankBase.R * 3 / 5, tankBase.G * 3 / 5, tankBase.B * 3 / 5);
         }
 
-        // 레지스트리의 유효한 24비트 RGB를 우선 사용한다.
-        // 옛 tank-color.txt는 유효한 값만 이전하며 새 저장이 성공해야 파일을 삭제한다.
-        // 읽기·권한 오류는 게임 시작을 막지 않고 기본색을 유지한다.
-        void LoadTankColor()
-        {
-            bool loaded = false;
-            try
-            {
-                using (RegistryKey key = Registry.CurrentUser.OpenSubKey(SettingsKey))
-                {
-                    object value = key == null ? null : key.GetValue("TankColor");
-                    if (value is int && (int)value >= 0 && (int)value <= 0xFFFFFF)
-                    {
-                        int rgb = (int)value;
-                        SetTankColor(Color.FromArgb((rgb >> 16) & 255, (rgb >> 8) & 255, rgb & 255));
-                        loaded = true;
-                    }
-                }
-            }
-            catch (IOException) { }
-            catch (UnauthorizedAccessException) { }
-            catch (System.Security.SecurityException) { }
 
-            // Only remove the old file after a valid color is safely persisted.
-            try
-            {
-                int rgb;
-                if (File.Exists(legacyColorPath) && int.TryParse(File.ReadAllText(legacyColorPath).Trim(),
-                    System.Globalization.NumberStyles.HexNumber, System.Globalization.CultureInfo.InvariantCulture, out rgb)
-                    && rgb >= 0 && rgb <= 0xFFFFFF)
-                {
-                    if (!loaded)
-                    {
-                        SetTankColor(Color.FromArgb((rgb >> 16) & 255, (rgb >> 8) & 255, rgb & 255));
-                        SaveTankColor();
-                    }
-                    File.Delete(legacyColorPath);
-                }
-            }
-            catch (IOException) { }
-            catch (UnauthorizedAccessException) { }
-            catch (System.Security.SecurityException) { }
-        }
 
-        // 현재 사용자 레지스트리에 RGB만 DWORD로 기록하고 Flush한다.
-        // 오류는 호출자에게 전달해 화면에서 저장 실패를 알릴 수 있게 한다.
         void SaveTankColor()
         {
-            using (RegistryKey key = Registry.CurrentUser.CreateSubKey(SettingsKey))
-            {
-                if (key == null) throw new IOException("Cannot open user settings.");
-                key.SetValue("TankColor", tankBase.ToArgb() & 0xFFFFFF, RegistryValueKind.DWord);
-                key.Flush();
-            }
+            store.Data.TankColor = tankBase.ToArgb() & 0xFFFFFF;
+            if (!store.Save()) ShowColorSaveError();
         }
 
         // 충전을 취소하고 타이머를 멈춘 뒤 12색 모달 팔레트를 연다.
-        // finally에서 경과한 대화상자 시간을 결과 만료 시각에 더해 게임 시간의 일관성을 유지한다.
+        // finally에서 기준 시각을 재설정해 대화상자에서 보낸 시간을 모델에 전달하지 않는다.
         void ChooseTankColor()
         {
             if (choosingColor) return;
             choosingColor = true;
-            charging = false;
-            charge = 0;
+            session.CancelCharge();
             timer.Stop();
-            double pausedAt = clock.Elapsed.TotalSeconds;
             try
             {
                 using (TankPalette picker = new TankPalette(tankBase))
@@ -595,20 +474,13 @@ namespace TaskbarGames.Games.Fortress
                     if (picker.ShowDialog(this) == DialogResult.OK)
                     {
                         SetTankColor(picker.SelectedColor);
-                        try
-                        {
-                            SaveTankColor();
-                        }
-                        catch (IOException) { ShowColorSaveError(); }
-                        catch (UnauthorizedAccessException) { ShowColorSaveError(); }
-                        catch (System.Security.SecurityException) { ShowColorSaveError(); }
+                        SaveTankColor();
                     }
                 }
             }
             finally
             {
                 double now = clock.Elapsed.TotalSeconds;
-                resultUntil += now - pausedAt;
                 lastTime = now;
                 choosingColor = false;
                 UpdateTimerInterval(now);
