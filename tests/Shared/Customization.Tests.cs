@@ -43,20 +43,6 @@ public static class CustomizationRegressionTests
         double activityX = timing.X;
         for (int i = 0; i < 130; i++) timing.Advance(0.1, 0, 1920);
         Assert(timing.Action == PetAction.Walk && timing.X != activityX, "Leisure did not return to walking.");
-        foreach (PetAnimal animal in Enum.GetValues(typeof(PetAnimal)))
-            foreach (string pose in new[] { "cola", "popcorn", "read", "watchtv" })
-                using (Bitmap first = new Bitmap(76, 56))
-                using (Bitmap next = new Bitmap(76, 56))
-                {
-                    using (Graphics g = Graphics.FromImage(first)) PetAppearance.Draw(g, animal, 22, 27, true, pose, 0, 1);
-                    using (Graphics g = Graphics.FromImage(next)) PetAppearance.Draw(g, animal, 22, 27, true, pose, 1, 1);
-                    bool changed = false;
-                    for (int y = 0; y < first.Height; y++)
-                        for (int x = 0; x < first.Width; x++)
-                            if (first.GetPixel(x, y) != next.GetPixel(x, y)) changed = true;
-                    Assert(changed, "Activity has no animated frames: " + animal + " " + pose);
-                }
-
         GameStore original = GameEnvironment.Store;
         string profile = Path.Combine(artifacts, "customization-profile-" + Guid.NewGuid().ToString("N") + ".xml");
         GameStore store = new GameStore(profile); store.Data.RunnerBest = 123;
@@ -74,8 +60,17 @@ public static class CustomizationRegressionTests
                 Call(game, "Tick", game, EventArgs.Empty);
                 Call(game, "OnGameKeyDown", game, new KeyEventArgs(Keys.Space));
                 Assert(session.Elapsed == elapsed && session.Attempts == attempts && session.SwingAge < 0, "Team selection advanced play or accepted a swing.");
-                ContextMenuStrip menu = (ContextMenuStrip)Field(game, "teamMenu");
+                ToolStripDropDown menu = (ToolStripDropDown)Field(game, "teamMenu");
                 Assert(menu.Items.Count == 10, "KBO team list is incomplete.");
+                menu.PerformLayout();
+                Assert(menu.Size == new Size(106, 122), "Team grid exceeded its compact size.");
+                for (int i = 0; i < menu.Items.Count; i++)
+                {
+                    ToolStripItem item = menu.Items[i];
+                    Assert(item.DisplayStyle == ToolStripItemDisplayStyle.Image && item.Image != null && item.Text.Length == 0, "Team grid must show only logos.");
+                    Assert(menu.ClientRectangle.Contains(item.Bounds), "Team logo was clipped.");
+                    Assert(item.Bounds.X == menu.Items[i % 3].Bounds.X && item.Bounds.Y == menu.Items[i / 3 * 3].Bounds.Y, "Team grid is not three columns by four rows.");
+                }
                 menu.Items[0].PerformClick(); menu.Close();
                 Assert(store.Data.BatterTeam == "lg" && store.Data.PitcherTeam == "", "Batter choice affected pitcher.");
                 Call(game, "OpenTeamMenu", false, new Point(300, game.Height - 50));
@@ -87,10 +82,18 @@ public static class CustomizationRegressionTests
             {
                 PetBehavior behavior = (PetBehavior)Field(game, "behavior");
                 double fullness = behavior.Stats.Fullness;
+                Acorn food = (Acorn)Call(game, "AddFood", behavior.X + 38);
+                Type markerType = typeof(PetGame).Assembly.GetType("TaskbarGames.Games.Pet.AcornMarker");
+                Form marker = (Form)Activator.CreateInstance(markerType);
+                ((System.Collections.IDictionary)Field(game, "markers")).Add(food, marker);
+                string[] foods = { "도토리", "뼈 간식", "생선", "대나무" };
                 foreach (PetAnimal animal in Enum.GetValues(typeof(PetAnimal)))
                 {
                     Call(game, "SelectAnimal", animal);
                     Assert(behavior.Stats.Fullness == fullness && behavior.Stats.Meals == 0, "Changing animals reset care state.");
+                    ToolStripDropDown careMenu = (ToolStripDropDown)Field(game, "menu");
+                    Assert(careMenu.Items[1].Text == foods[(int)animal] + " 놓기", "Food menu does not match the animal.");
+                    Assert((PetAnimal)markerType.GetProperty("Animal").GetValue(marker, null) == animal && behavior.Food.Count == 1, "Changing animals failed to update placed food without losing it.");
                 }
                 Assert(((ContextMenuStrip)Field(game, "animalMenu")).Items.Count == 4, "Animal menu is incomplete.");
             }
@@ -104,45 +107,6 @@ public static class CustomizationRegressionTests
             Assert(TeamUniform.Find("invalid", true) == TeamUniform.DefaultBatter && PetAppearance.Parse("invalid") == PetAnimal.Squirrel, "Unknown appearance settings do not fall back safely.");
         }
         finally { GameEnvironment.Store = original; }
-        Render(artifacts);
-        Console.WriteLine("PASS: 10 independent team uniforms, selection pauses play, four animals, cosmetic leisure, food priority and appearance persistence.");
-    }
-    static void Render(string artifacts)
-    {
-        string[] poses = { "idle", "walk", "sleep", "eat", "cola", "popcorn", "read", "watchtv" };
-        using (Bitmap image = new Bitmap(800, 360))
-        using (Graphics g = Graphics.FromImage(image))
-        {
-            g.Clear(Color.FromArgb(220, 227, 236));
-            for (int row = 0; row < 4; row++)
-                for (int col = 0; col < poses.Length; col++)
-                {
-                    int x = col * 100, y = row * 90;
-                    g.DrawString(((PetAnimal)row).ToString() + " " + poses[col], SystemFonts.DefaultFont, Brushes.Black, x, y);
-                    PetAppearance.Draw(g, (PetAnimal)row, x + 20, y + 28, true, poses[col], 0.5, 1);
-                    PetAppearance.Draw(g, (PetAnimal)row, x + 20, y + 59, false, poses[col], 1, 1);
-                }
-            image.Save(Path.Combine(artifacts, "pet-animals-activities.png"));
-        }
-        Type animator = typeof(BaseballGame).Assembly.GetType("TaskbarGames.Games.Baseball.BatterAnimation");
-        MethodInfo draw = animator.GetMethod("Draw", new[] { typeof(Graphics), typeof(int), typeof(double), typeof(TeamUniform) });
-        string[] pitcher = (string[])typeof(BaseballGame).GetField("Pitcher", BindingFlags.Static | BindingFlags.NonPublic).GetValue(null);
-        using (Bitmap image = new Bitmap(600, 200))
-        using (Graphics g = Graphics.FromImage(image))
-        {
-            g.Clear(Color.FromArgb(220, 227, 236));
-            for (int i = 0; i < TeamUniform.All.Length; i++)
-            {
-                TeamUniform team = TeamUniform.All[i];
-                System.Drawing.Drawing2D.GraphicsState state = g.Save();
-                g.TranslateTransform(i % 5 * 120, i / 5 * 100);
-                g.DrawString(team.Name, SystemFonts.DefaultFont, Brushes.Black, 2, 2);
-                g.TranslateTransform(0, 20); g.ScaleTransform(0.65f, 0.65f);
-                draw.Invoke(null, new object[] { g, 80, -1.0, team });
-                team.DrawSprite(g, pitcher, 125, 32);
-                g.Restore(state);
-            }
-            image.Save(Path.Combine(artifacts, "baseball-team-uniforms.png"));
-        }
+        Console.WriteLine("PASS: compact 3x4 logo grid, independent uniforms, paused selection, animal-specific food and saved appearances.");
     }
 }

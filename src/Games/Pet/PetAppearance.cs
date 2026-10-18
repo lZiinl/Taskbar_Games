@@ -70,7 +70,11 @@ namespace TaskbarGames.Games.Pet
                     Round(g, Cream, 19, 17, 12, 6); Box(g, Ink, 23, 17, 3, 2); Box(g, Ink, 24, 19, 1, 2);
                     Box(g, Pink, 14, 18, 3, 1);
                     if (cat) { Box(g, Ink, 11, 18, 6, 1); Box(g, Ink, 29, 18, 5, 1); }
-                    if (pose == "eat") { Round(g, dark, 22, 22 + frame, 7, 4); Box(g, Cream, 20, 23 + frame, 3, 2); }
+                    if (pose == "eat")
+                    {
+                        PetFood.Draw(g, animal, 20, 17 + frame);
+                        Box(g, Cream, 18, 23 + frame, 3, 2); Box(g, Cream, 31, 22 + frame, 2, 2);
+                    }
                     else { Box(g, fur, 15, 22, 3, 2); Box(g, fur, 27, 22, 3, 2); }
                 }
             }

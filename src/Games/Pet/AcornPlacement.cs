@@ -14,11 +14,14 @@ namespace TaskbarGames.Games.Pet
         // 선택 결과는 클라이언트 상대 좌표가 아닌 화면 X좌표다. PetGame이 접근 가능한 범위로 보정한다.
         internal int SelectedX { get; private set; }
         int previewX;
+        readonly PetAnimal animal;
         readonly Timer displayTimer = new Timer();
         // 작업 영역 하단의 24px 투명 띠를 생성한다. 커서 X만 위치 선택에 사용한다.
         // 왼쪽 클릭은 확정, 다른 마우스 버튼은 취소이며 포커스를 잃어도 닫는다.
-        public AcornPlacement()
+        public AcornPlacement() : this(PetAnimal.Squirrel) { }
+        public AcornPlacement(PetAnimal kind)
         {
+            animal = kind;
             AutoScaleMode = AutoScaleMode.None;
             FormBorderStyle = FormBorderStyle.None; StartPosition = FormStartPosition.Manual;
             Rectangle area = GameEnvironment.Display.WorkingArea;
@@ -69,15 +72,19 @@ namespace TaskbarGames.Games.Pet
         {
             base.OnPaint(e);
             int bounded = Math.Max(38, Math.Min(Width - 38, previewX));
-            AcornMarker.DrawAcorn(e.Graphics, bounded - 5, Height - 12);
+            PetFood.Draw(e.Graphics, animal, bounded - 6, Height - 12);
         }
     }
     // 도토리마다 하나씩 소유되는 작은 표시 창. 먹거나 게임이 닫힐 때 Dispose한다.
     internal sealed class AcornMarker : Form
     {
+        PetAnimal animal;
+        public PetAnimal Animal { get { return animal; } set { animal = value; Invalidate(); } }
         // 16×16 크기를 고정해 네이티브 창 생성 시 자동 최소 크기 확장으로 좌표가 틀어지는 것을 막는다.
-        public AcornMarker()
+        public AcornMarker() : this(PetAnimal.Squirrel) { }
+        public AcornMarker(PetAnimal kind)
         {
+            animal = kind;
             AutoScaleMode = AutoScaleMode.None;
             FormBorderStyle = FormBorderStyle.None; StartPosition = FormStartPosition.Manual;
             MinimumSize = MaximumSize = new Size(16, 16);
@@ -92,16 +99,8 @@ namespace TaskbarGames.Games.Pet
         { get { CreateParams cp = base.CreateParams; cp.ExStyle |= 0x08000000 | 0x20; return cp; } }
         // 배치 미리보기·메뉴 아이콘·실제 도토리에 공통으로 사용하는 픽셀 그림이다.
         internal static void DrawAcorn(Graphics g, int x, int y)
-        {
-            using (SolidBrush cap = new SolidBrush(Color.FromArgb(119, 72, 46)))
-            using (SolidBrush nut = new SolidBrush(Color.FromArgb(245, 184, 115)))
-            {
-                g.FillRectangle(cap, x + 4, y, 2, 2); g.FillRectangle(cap, x + 1, y + 2, 9, 3);
-                g.FillRectangle(nut, x + 2, y + 5, 7, 4); g.FillRectangle(nut, x + 3, y + 9, 5, 1);
-                g.FillRectangle(Brushes.Bisque, x + 3, y + 5, 2, 2);
-            }
-        }
+        { PetFood.Draw(g, PetAnimal.Squirrel, x, y); }
         // 16px 창 안에서 아래쪽으로 배치해 작업표시줄 위 지면에 맞춘다.
-        protected override void OnPaint(PaintEventArgs e) { base.OnPaint(e); DrawAcorn(e.Graphics, 2, 4); }
+        protected override void OnPaint(PaintEventArgs e) { base.OnPaint(e); PetFood.Draw(e.Graphics, animal, 2, 4); }
     }
 }

@@ -44,7 +44,7 @@ namespace TaskbarGames.Games.Pet
             ArcadeTheme.Style(menu); menu.LayoutStyle = ToolStripLayoutStyle.HorizontalStackWithOverflow;
             menu.AutoSize = false; menu.Size = new Size(154, 34);
             status.Image = PetMenuIcon("info"); menu.Items.Add(status);
-            menu.Items.Add(new ToolStripButton("도토리 놓기", PetMenuIcon("food"), delegate { menu.Close(); BeginInvoke(new Action(PlaceFood)); }));
+            menu.Items.Add(new ToolStripButton(PetFood.Name(animal) + " 놓기", PetFood.Icon(animal), delegate { menu.Close(); BeginInvoke(new Action(PlaceFood)); }));
             menu.Items.Add(new ToolStripButton("쓰다듬기", PetMenuIcon("love"), delegate { menu.Close(); Stroke(); }));
             menu.Items.Add(new ToolStripButton("낮잠 자기 / 깨우기", PetMenuIcon("sleep"), delegate { menu.Close(); behavior.ToggleSleep(); Invalidate(); }));
             menu.Items.Add(new ToolStripButton("게임 선택으로 돌아가기 (Esc)", PetMenuIcon("back"), delegate { menu.Close(); Close(); }));
@@ -72,6 +72,7 @@ namespace TaskbarGames.Games.Pet
             menu.Opening += delegate { menuOpen = true; UpdateStatus(); };
             menu.Closed += delegate { menuOpen = false; lastTime = clock.Elapsed.TotalSeconds; };
             UpdatePetHint();
+            UpdateStatus();
             MouseDown += delegate(object sender, MouseEventArgs e) {
                 if (e.Button == MouseButtons.Left) Stroke();
                 else if (e.Button == MouseButtons.Right) menu.Show(this, e.Location);
@@ -96,15 +97,22 @@ namespace TaskbarGames.Games.Pet
         void SelectAnimal(PetAnimal choice)
         {
             animal = choice; store.Data.PetAnimal = choice.ToString().ToLowerInvariant(); SaveState();
+            Image oldFoodIcon = menu.Items[1].Image;
+            menu.Items[1].Image = PetFood.Icon(animal);
+            if (oldFoodIcon != null) oldFoodIcon.Dispose();
+            foreach (AcornMarker marker in markers.Values) marker.Animal = animal;
+            UpdateStatus();
             Text = "Taskbar_Games - " + PetAppearance.Name(animal); UpdatePetHint(); Invalidate();
         }
         void UpdateStatus()
         {
-            status.Text = String.Format("포만감 {0:0} · 기분 {1:0} · 도토리 {2}개{3}", behavior.Stats.Fullness, behavior.Stats.Mood,
+            status.Text = String.Format("포만감 {0:0} · 기분 {1:0} · 식사 {2}회{3}", behavior.Stats.Fullness, behavior.Stats.Mood,
                 behavior.Stats.Meals, store.Error.Length == 0 ? "" : " · " + store.Error);
             status.ToolTipText = status.AccessibleName = status.Text;
             menu.Items[1].Enabled = behavior.Food.Count < PetBehavior.MaxAcorns;
-            menu.Items[1].ToolTipText = behavior.Food.Count >= PetBehavior.MaxAcorns ? "도토리는 최대 5개까지 놓을 수 있어요" : "도토리 놓기 (" + behavior.Food.Count + "/5)";
+            menu.Items[1].Text = PetFood.Name(animal) + " 놓기";
+            menu.Items[1].AccessibleName = menu.Items[1].Text;
+            menu.Items[1].ToolTipText = behavior.Food.Count >= PetBehavior.MaxAcorns ? "먹이는 최대 5개까지 놓을 수 있어요" : menu.Items[1].Text + " (" + behavior.Food.Count + "/5)";
         }
         void OnPetKeyDown(object sender, KeyEventArgs e)
         {
@@ -150,12 +158,12 @@ namespace TaskbarGames.Games.Pet
             placingFood = true; timer.Stop();
             try
             {
-                using (AcornPlacement picker = new AcornPlacement())
+                using (AcornPlacement picker = new AcornPlacement(animal))
                     if (picker.ShowDialog(this) == DialogResult.OK)
                     {
                         Acorn acorn = AddFood(picker.SelectedX);
                         if (acorn == null) return;
-                        AcornMarker marker = new AcornMarker(); markers.Add(acorn, marker);
+                        AcornMarker marker = new AcornMarker(animal); markers.Add(acorn, marker);
                         PositionFood(); marker.Show(this);
                     }
             }
@@ -300,7 +308,7 @@ namespace TaskbarGames.Games.Pet
             string label = behavior.Action == PetAction.Sleep ? "Z Z Z" : behavior.Action == PetAction.Eat ? "YUM"
                 : behavior.Action == PetAction.Cola ? "COLA" : behavior.Action == PetAction.Popcorn ? "POP"
                 : behavior.Action == PetAction.Read ? "READ" : behavior.Action == PetAction.WatchTV ? "TV"
-                : behavior.Stats.Fullness < 25 && behavior.Action != PetAction.Love ? "ACORN" : "";
+                : behavior.Stats.Fullness < 25 && behavior.Action != PetAction.Love ? PetFood.Label(animal) : "";
             if (label.Length > 0)
             {
                 Box(e.Graphics, ArcadeTheme.Black, 17, 5, PixelArt.Width(label) + 10, 17);

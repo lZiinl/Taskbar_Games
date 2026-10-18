@@ -60,13 +60,15 @@ namespace TaskbarGames.Games.Baseball
         static Color ControlLight(Color color) { return Color.FromArgb((color.R + 255) / 2, (color.G + 255) / 2, (color.B + 255) / 2); }
         public Bitmap Icon()
         {
-            Bitmap image = new Bitmap(24, 24);
+            Bitmap image = new Bitmap(28, 24);
+            using (System.IO.Stream stream = typeof(TeamUniform).Assembly.GetManifestResourceStream("Teams." + Id + ".png"))
+            using (Image logo = Image.FromStream(stream))
             using (Graphics g = Graphics.FromImage(image))
             {
-                using (Brush shirt = new SolidBrush(Jersey)) g.FillRectangle(shirt, 4, 10, 16, 13);
-                using (Brush hat = new SolidBrush(Cap)) { g.FillRectangle(hat, 6, 1, 12, 6); g.FillRectangle(hat, 4, 6, 17, 2); }
-                if (Pinstripes) using (Pen stripe = new Pen(Cap)) for (int x = 6; x < 20; x += 4) g.DrawLine(stripe, x, 10, x, 22);
-                PixelArt.Text(g, Mark, Accent, 10, 13);
+                float ratio = Math.Min(28f / logo.Width, 24f / logo.Height);
+                int width = Math.Max(1, (int)Math.Round(logo.Width * ratio)), height = Math.Max(1, (int)Math.Round(logo.Height * ratio));
+                g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+                g.DrawImage(logo, new Rectangle((28 - width) / 2, (24 - height) / 2, width, height));
             }
             return image;
         }

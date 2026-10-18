@@ -17,7 +17,7 @@ namespace TaskbarGames.Games.Baseball
         readonly GameStore store;
         ProgressTracker progress;
         bool resultShown;
-        readonly ContextMenuStrip teamMenu = new ContextMenuStrip();
+        readonly ToolStripDropDown teamMenu = new ToolStripDropDown();
         readonly ArcadeHints teamHints = new ArcadeHints();
         bool choosingTeam, editingBatter;
         TeamUniform batterUniform, pitcherUniform;
@@ -113,12 +113,19 @@ namespace TaskbarGames.Games.Baseball
                 Focus();
             };
             ArcadeTheme.Style(teamMenu);
-            teamMenu.ShowImageMargin = true; teamMenu.ShowCheckMargin = true; teamMenu.ImageScalingSize = new Size(24, 24);
+            teamMenu.AutoSize = false; teamMenu.Size = new Size(106, 122);
+            teamMenu.LayoutStyle = ToolStripLayoutStyle.Table;
+            TableLayoutSettings grid = (TableLayoutSettings)teamMenu.LayoutSettings;
+            grid.ColumnCount = 3; grid.RowCount = 4; grid.GrowStyle = TableLayoutPanelGrowStyle.FixedSize;
+            for (int column = 0; column < 3; column++) grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 32));
+            for (int row = 0; row < 4; row++) grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
             foreach (TeamUniform team in TeamUniform.All)
             {
                 TeamUniform choice = team;
-                ToolStripMenuItem item = new ToolStripMenuItem(team.Name, team.Icon(), delegate { SelectTeam(choice); });
-                item.Tag = team; item.ToolTipText = team.Name + " 유니폼으로 변경 · 경기 기록과 능력치는 그대로 유지됩니다";
+                ToolStripButton item = new TeamLogoButton();
+                item.Image = team.Icon(); item.Tag = team; item.AccessibleName = team.Name;
+                item.ToolTipText = team.Name;
+                item.Click += delegate { SelectTeam(choice); teamMenu.Close(); };
                 teamMenu.Items.Add(item);
             }
             teamHints.AttachMenu(this, teamMenu);
@@ -135,7 +142,7 @@ namespace TaskbarGames.Games.Baseball
         {
             AdvanceToNow(); editingBatter = batter; choosingTeam = true;
             teamMenu.AccessibleName = batter ? "타자 구단 선택" : "투수 구단 선택";
-            foreach (ToolStripMenuItem item in teamMenu.Items)
+            foreach (ToolStripButton item in teamMenu.Items)
                 item.Checked = ((TeamUniform)item.Tag).Id == (batter ? batterUniform.Id : pitcherUniform.Id);
             teamMenu.Show(this, location);
         }
@@ -144,6 +151,22 @@ namespace TaskbarGames.Games.Baseball
             if (editingBatter) { batterUniform = team; store.Data.BatterTeam = team.Id; }
             else { pitcherUniform = team; store.Data.PitcherTeam = team.Id; }
             store.Save(); Invalidate();
+        }
+        sealed class TeamLogoButton : ToolStripButton
+        {
+            public TeamLogoButton()
+            {
+                AutoSize = false; Size = new Size(32, 28); Margin = Padding.Empty; Padding = Padding.Empty;
+                DisplayStyle = ToolStripItemDisplayStyle.Image; ImageScaling = ToolStripItemImageScaling.None;
+                Overflow = ToolStripItemOverflow.Never;
+            }
+            protected override void OnPaint(PaintEventArgs e)
+            {
+                base.OnPaint(e);
+                if (Checked || Selected)
+                    using (Pen border = new Pen(Checked ? ArcadeTheme.Neon : Color.White))
+                        e.Graphics.DrawRectangle(border, 0, 0, Width - 1, Height - 1);
+            }
         }
         void SaveRecords() { progress.Record(session.Stats); }
         void ShowSummary()

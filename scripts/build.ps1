@@ -16,7 +16,10 @@ New-Item -ItemType Directory -Path $output -Force | Out-Null
 $sources = @(Get-ChildItem -LiteralPath (Join-Path $projectRoot 'src') -Filter '*.cs' -Recurse | Sort-Object FullName | ForEach-Object { $_.FullName })
 # /win32icon은 탐색기 아이콘, /resource는 각 Form에서 사용할 ArcadeTheme.AppIcon의 원본이다.
 $iconPath = Join-Path $projectRoot 'assets\TaskbarGames.ico'
-& $compiler /nologo /codepage:65001 /target:winexe /optimize+ /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.Xml.dll "/win32icon:$iconPath" "/resource:$iconPath,TaskbarGames.ico" "/out:$output\Taskbar_Games.exe" @sources
+$teamLogos = @(Get-ChildItem -LiteralPath (Join-Path $projectRoot 'assets\teams') -Filter '*.png' | Sort-Object Name)
+if ($teamLogos.Count -ne 10) { throw 'All ten team logos are required.' }
+$teamResources = @($teamLogos | ForEach-Object { '/resource:' + $_.FullName + ',Teams.' + $_.Name })
+& $compiler /nologo /codepage:65001 /target:winexe /optimize+ /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.Xml.dll "/win32icon:$iconPath" "/resource:$iconPath,TaskbarGames.ico" "/out:$output\Taskbar_Games.exe" @teamResources @sources
 # 네이티브 컴파일러 실패는 PowerShell 예외가 아닐 수 있으므로 명시적으로 실패를 전달한다.
 if ($LASTEXITCODE -ne 0) { throw 'Build failed.' }
 Write-Output "Built: $output\Taskbar_Games.exe"
