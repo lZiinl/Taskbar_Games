@@ -7,6 +7,7 @@ using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Windows.Forms;
 using TaskbarGames.Shared;
+using TaskbarGames.Launcher;
 
 namespace TaskbarGames.Games.Baseball
 {
@@ -14,6 +15,12 @@ namespace TaskbarGames.Games.Baseball
     {
         readonly BaseballSession session;
         readonly GameStore store;
+        ProgressTracker progress;
+        bool resultShown;
+        readonly ContextMenuStrip teamMenu = new ContextMenuStrip();
+        readonly ArcadeHints teamHints = new ArcadeHints();
+        bool choosingTeam, editingBatter;
+        TeamUniform batterUniform, pitcherUniform;
         readonly Timer timer = new Timer();
         readonly Stopwatch clock = Stopwatch.StartNew();
         readonly Color ink = ArcadeTheme.Black;
@@ -53,10 +60,14 @@ namespace TaskbarGames.Games.Baseball
 
         // 투명 전체 작업 영역 창을 만들고 활성화/비활성화에 모델의 Active를 연결한다.
         // 키를 누른 채 복귀한 경우 먼저 떼도록 하며 종료 버튼 판정은 화면 좌표를 논리 좌표로 바꿔 검사한다.
-        public BaseballGame()
+        public BaseballGame() : this(GameMode.Practice) { }
+        public BaseballGame(GameMode mode)
         {
             store = GameEnvironment.Store;
-            session = new BaseballSession(new Random(), store.Data.BaseballBestDistance, store.Data.BaseballScore, store.Data.BaseballAttempts, store.Data.BaseballHits);
+            batterUniform = TeamUniform.Find(store.Data.BatterTeam, true);
+            pitcherUniform = TeamUniform.Find(store.Data.PitcherTeam, false);
+            session = new BaseballSession(new Random(), mode);
+            progress = new ProgressTracker(store, GameKind.Baseball, mode);
             session.AttemptCompleted += SaveRecords;
             FormClosing += delegate { SaveRecords(); };
             Text = "Taskbar_Games - Baseball";
@@ -72,14 +83,14 @@ namespace TaskbarGames.Games.Baseball
             ResetLayout();
             Activated += delegate {
                 spaceHeld = KeyboardState.SpaceDown;
-                session.SetActive(true);
+                if (!choosingTeam) session.SetActive(true);
                 lastTime = clock.Elapsed.TotalSeconds;
                 UpdateTimer();
                 Invalidate();
             };
             Deactivate += delegate {
                 spaceHeld = false;
-                session.SetActive(false);
+                if (!choosingTeam) session.SetActive(false);
                 lastTime = clock.Elapsed.TotalSeconds;
                 UpdateTimer();
                 Invalidate();
@@ -89,23 +100,61 @@ namespace TaskbarGames.Games.Baseball
                 if (e.KeyCode == Keys.Space) { spaceHeld = false; e.Handled = e.SuppressKeyPress = true; }
             };
             MouseDown += delegate(object sender, MouseEventArgs e) {
+                if (e.Button == MouseButtons.Right)
+                {
+                    Point world = new Point((int)(e.X / GameScale), (int)(e.Y / GameScale));
+                    if (new Rectangle(42, ground - 56, 66, 56).Contains(world)) OpenTeamMenu(true, e.Location);
+                    else if (new Rectangle(pitcherX - 25, ground - 54, 50, 54).Contains(world)) OpenTeamMenu(false, e.Location);
+                    return;
+                }
                 if (e.Button != MouseButtons.Left) return;
                 if (closeButton.Contains((int)(e.X / GameScale), (int)(e.Y / GameScale))) { Close(); return; }
                 Activate();
                 Focus();
+            };
+            ArcadeTheme.Style(teamMenu);
+            teamMenu.ShowImageMargin = true; teamMenu.ShowCheckMargin = true; teamMenu.ImageScalingSize = new Size(24, 24);
+            foreach (TeamUniform team in TeamUniform.All)
+            {
+                TeamUniform choice = team;
+                ToolStripMenuItem item = new ToolStripMenuItem(team.Name, team.Icon(), delegate { SelectTeam(choice); });
+                item.Tag = team; item.ToolTipText = team.Name + " 유니폼으로 변경 · 경기 기록과 능력치는 그대로 유지됩니다";
+                teamMenu.Items.Add(item);
+            }
+            teamHints.AttachMenu(this, teamMenu);
+            teamMenu.Closed += delegate {
+                choosingTeam = false; lastTime = clock.Elapsed.TotalSeconds; spaceHeld = KeyboardState.SpaceDown;
+                session.SetActive(Form.ActiveForm == this); UpdateTimer(); Invalidate();
             };
             timer.Interval = 250;
             timer.Tick += Tick;
             timer.Start();
         }
 
-        void SaveRecords()
+        void OpenTeamMenu(bool batter, Point location)
         {
-            store.Data.BaseballBestDistance = session.BestDistance;
-            store.Data.BaseballScore = session.Score;
-            store.Data.BaseballAttempts = session.Attempts;
-            store.Data.BaseballHits = session.Hits;
-            store.Save();
+            AdvanceToNow(); editingBatter = batter; choosingTeam = true;
+            teamMenu.AccessibleName = batter ? "타자 구단 선택" : "투수 구단 선택";
+            foreach (ToolStripMenuItem item in teamMenu.Items)
+                item.Checked = ((TeamUniform)item.Tag).Id == (batter ? batterUniform.Id : pitcherUniform.Id);
+            teamMenu.Show(this, location);
+        }
+        void SelectTeam(TeamUniform team)
+        {
+            if (editingBatter) { batterUniform = team; store.Data.BatterTeam = team.Id; }
+            else { pitcherUniform = team; store.Data.PitcherTeam = team.Id; }
+            store.Save(); Invalidate();
+        }
+        void SaveRecords() { progress.Record(session.Stats); }
+        void ShowSummary()
+        {
+            if (resultShown || choosingTeam || !session.Active || !session.IsComplete || session.Elapsed < BaseballSession.ResultSeconds) return;
+            resultShown = true; timer.Stop();
+            using (ChallengeResultForm result = new ChallengeResultForm(GameKind.Baseball, session.Stats, progress))
+                if (result.ShowDialog(this) != DialogResult.Retry) { Close(); return; }
+            session.Restart(); progress = new ProgressTracker(store, GameKind.Baseball, session.Mode);
+            resultShown = false; lastTime = clock.Elapsed.TotalSeconds;
+            Activate(); UpdateTimer(); timer.Start(); Invalidate();
         }
 
         // 작업 영역을 다시 읽고 논리 지면·투수 위치·초기 종료 버튼 위치를 설정한다.
@@ -128,7 +177,7 @@ namespace TaskbarGames.Games.Baseball
             if (e.KeyCode == Keys.Escape) { Close(); return; }
             if (e.KeyCode != Keys.Space) return;
             e.Handled = e.SuppressKeyPress = true;
-            if (spaceHeld || !session.Active) return;
+            if (spaceHeld || !session.Active || choosingTeam) return;
             spaceHeld = true;
             // Synchronize to the actual key press, independent of timer jitter.
             bool changed = AdvanceToNow();
@@ -143,6 +192,7 @@ namespace TaskbarGames.Games.Baseball
             double now = clock.Elapsed.TotalSeconds;
             double elapsed = now - lastTime;
             lastTime = now;
+            if (choosingTeam) return false;
             return session.Advance(elapsed);
         }
 
@@ -154,13 +204,14 @@ namespace TaskbarGames.Games.Baseball
             changed = AdvanceToNow() || changed;
             UpdateTimer();
             if (changed) Invalidate();
+            ShowSummary();
         }
 
         // 비활성 상태는 250ms, 움직이는 동안은 16ms로 갱신한다.
         // 정적인 결과 화면은 다음 전환 시점까지만 기다리되 작업 영역 확인을 위해 최대 250ms로 제한한다.
         void UpdateTimer()
         {
-            timer.Interval = !session.Active ? 250 : session.Phase == BaseballPhase.Result && session.SwingAge < 0
+            timer.Interval = !session.Active || (session.IsComplete && session.Elapsed >= BaseballSession.ResultSeconds) ? 250 : session.Phase == BaseballPhase.Result && session.SwingAge < 0
                 ? Math.Max(1, Math.Min(250, (int)Math.Ceiling((BaseballSession.ResultSeconds - session.Elapsed) * 1000))) : 16;
         }
 
@@ -203,9 +254,9 @@ namespace TaskbarGames.Games.Baseball
             g.ScaleTransform(GameScale, GameScale);
             g.SmoothingMode = SmoothingMode.None;
             DrawFence(g);
-            BatterAnimation.Draw(g, ground, session.SwingAge);
+            BatterAnimation.Draw(g, ground, session.SwingAge, batterUniform);
             bool winding = session.Phase == BaseballPhase.Ready && session.Elapsed > 0.4 && session.Elapsed < 0.72;
-            PixelArt.Sprite(g, winding ? PitcherWindup : Pitcher, pitcherX - 20, ground - 48, Color.FromArgb(227, 101, 110));
+            pitcherUniform.DrawSprite(g, winding ? PitcherWindup : Pitcher, pitcherX - 20, ground - 48);
             Box(g, ContactX - 5, ground - 2, 11, 2, Color.WhiteSmoke);
             Box(g, pitcherX - 22, ground - 2, 44, 2, Color.FromArgb(171, 141, 106));
             DrawPitchingArm(g);
@@ -225,6 +276,19 @@ namespace TaskbarGames.Games.Baseball
             PixelArt.Text(g, "X", ArcadeTheme.Pink, hudX + hudWidth - 12, hudBottom - 12);
             closeButton = new Rectangle((int)((hudX + hudWidth - 18) / GameScale), (int)((hudBottom - 18) / GameScale),
                 (int)Math.Ceiling(18 / GameScale), (int)Math.Ceiling(18 / GameScale));
+            // 남은 공 수는 점수판 오른쪽에 붙이고 구속은 투수 옆에 표시한다.
+            string remaining = session.Mode == GameMode.Challenge ? Math.Max(0, 10 - session.Attempts) + " LEFT" : "PRACT";
+            int countX = hudX + hudWidth + 5;
+            Box(g, countX, hudBottom - 11, PixelArt.Width(remaining) + 4, 10, ink);
+            PixelArt.Text(g, remaining, Color.Silver, countX + 2, hudBottom - 10);
+            if (session.Phase == BaseballPhase.Pitch)
+            {
+                string speed = session.PitchKph.ToString("0") + " KM/H";
+                int speedX = Math.Min(ClientSize.Width - PixelArt.Width(speed) - 6, (int)((pitcherX + 28) * GameScale));
+                Box(g, speedX, hudBottom - 27, PixelArt.Width(speed) + 4, 10, ink);
+                PixelArt.Text(g, speed, Color.Silver, speedX + 2, hudBottom - 26);
+            }
+            GameUi.DrawBadge(g, store, GameKind.Baseball, progress, hudX, hudBottom - 56);
             g.Restore(hudState);
 
             if (session.Phase == BaseballPhase.Pitch || session.Phase == BaseballPhase.Flight)
@@ -269,12 +333,13 @@ namespace TaskbarGames.Games.Baseball
         void DrawFence(Graphics g)
         {
             int x = (int)FieldX(BaseballSession.FenceDistance);
-            int top = ground - BaseballSession.FenceHeight;
+            int fenceHeight = (int)Math.Round(BaseballSession.FenceHeight);
+            int top = ground - fenceHeight;
             Color mesh = Color.FromArgb(104, 142, 155);
             for (int yy = top + 4; yy < ground; yy += 4) Box(g, x, yy, 18, 1, mesh);
-            for (int xx = x + 4; xx < x + 18; xx += 4) Box(g, xx, top, 1, BaseballSession.FenceHeight, mesh);
-            Box(g, x, top, 2, BaseballSession.FenceHeight, ink);
-            Box(g, x + 16, top, 2, BaseballSession.FenceHeight, ink);
+            for (int xx = x + 4; xx < x + 18; xx += 4) Box(g, xx, top, 1, fenceHeight, mesh);
+            Box(g, x, top, 2, fenceHeight, ink);
+            Box(g, x + 16, top, 2, fenceHeight, ink);
             Box(g, x - 1, top - 2, 20, 3, mint);
             GraphicsState labelState = g.Save();
             g.ResetTransform();
@@ -351,7 +416,12 @@ namespace TaskbarGames.Games.Baseball
         // 폼 종료 시 타이머를 해제하여 닫힌 게임의 업데이트가 남지 않게 한다.
         protected override void Dispose(bool disposing)
         {
-            if (disposing) timer.Dispose();
+            if (disposing)
+            {
+                timer.Dispose(); teamHints.Dispose();
+                foreach (ToolStripItem item in teamMenu.Items) if (item.Image != null) item.Image.Dispose();
+                teamMenu.Dispose();
+            }
             base.Dispose(disposing);
         }
     }

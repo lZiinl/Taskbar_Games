@@ -28,3 +28,5 @@ if ($LASTEXITCODE -ne 0) { throw 'Test build failed.' }
 [PetRegressionTests]::Run($artifacts)
 [RunnerRegressionTests]::Run($artifacts)
 [SharedRegressionTests]::Run($artifacts)
+[ChallengeRegressionTests]::Run($artifacts)
+[CustomizationRegressionTests]::Run($artifacts)

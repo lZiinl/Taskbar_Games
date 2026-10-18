@@ -82,7 +82,7 @@ public static class PetRegressionTests
             Assert(behavior.JumpAge < 0 && pet.Bottom == Screen.PrimaryScreen.WorkingArea.Bottom, "Focus loss did not cancel jump.");
             typeof(PetGame).GetMethod("UpdateStatus", flags).Invoke(pet, null);
             ToolStripDropDown menu = (ToolStripDropDown)typeof(PetGame).GetField("menu", flags).GetValue(pet);
-            menu.PerformLayout(); Assert(menu.Items.Count == 5 && menu.Size == new Size(130, 34), "Pet menu changed size.");
+            menu.PerformLayout(); Assert(menu.Items.Count == 6 && menu.Size == new Size(154, 34), "Pet menu items are clipped.");
             using (Bitmap image = new Bitmap(menu.Width, menu.Height))
             { menu.DrawToBitmap(image, menu.ClientRectangle); image.Save(Path.Combine(artifacts, "pet-menu.png")); }
             using (Bitmap strip = new Bitmap(624, 110))

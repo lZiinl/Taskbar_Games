@@ -42,8 +42,6 @@ namespace TaskbarGames.Games.Baseball
             ".DTSSSSD..", ".DTSSDSSD.", "..DSSSSD..", "...DTTD..."
         };
         static readonly Color Ink = Color.FromArgb(25, 32, 45);
-        static readonly Color Blue = Color.FromArgb(92, 159, 235);
-        static readonly Color Shadow = Color.FromArgb(54, 109, 177);
         static readonly Color Skin = Color.FromArgb(246, 194, 144);
         static readonly Color Pants = Color.FromArgb(233, 239, 247);
 
@@ -97,6 +95,8 @@ namespace TaskbarGames.Games.Baseball
         // 고관절·무릎·발목은 고정 좌표이며 상체만 현재 Pose에 따라 움직인다.
         // 손에서 배트 각도 방향으로 길이 30의 끝점을 구하고 손잡이/배럴/글러브를 덧그린다.
         public static void Draw(Graphics g, int ground, double age)
+        { Draw(g, ground, age, TeamUniform.DefaultBatter); }
+        public static void Draw(Graphics g, int ground, double age, TeamUniform uniform)
         {
             Pose p = At(age);
             PointF hip = new PointF(65, ground - 19);
@@ -114,14 +114,25 @@ namespace TaskbarGames.Games.Baseball
                 new PointF(p.Shoulder + 6, ground - 35),
                 new PointF(72, ground - 18), new PointF(58, ground - 18)
             };
-            using (SolidBrush fill = new SolidBrush(Blue)) g.FillPolygon(fill, torso);
+            using (SolidBrush fill = new SolidBrush(uniform.Jersey)) g.FillPolygon(fill, torso);
+            if (uniform.Pinstripes)
+            {
+                System.Drawing.Drawing2D.GraphicsState clip = g.Save();
+                using (System.Drawing.Drawing2D.GraphicsPath path = new System.Drawing.Drawing2D.GraphicsPath())
+                {
+                    path.AddPolygon(torso); g.SetClip(path);
+                    using (Pen stripe = new Pen(uniform.Cap))
+                        for (int x = 54; x < 80; x += 4) g.DrawLine(stripe, x, ground - 36, x, ground - 18);
+                }
+                g.Restore(clip);
+            }
             using (Pen outline = new Pen(Ink, 2)) g.DrawPolygon(outline, torso);
-            Stroke(g, Shadow, 4, torso[0], torso[3]);
+            Stroke(g, uniform.Cap, 4, torso[0], torso[3]);
             Stroke(g, Ink, 2, new PointF(58, ground - 18), new PointF(72, ground - 18));
-            Stroke(g, Color.FromArgb(180, 218, 250), 2,
+            Stroke(g, uniform.Accent, 2,
                 new PointF(p.Shoulder + 1 - p.Turn * 4, ground - 32), new PointF(66 - p.Turn * 4, ground - 22));
             // Keep the head steady over the torso instead of turning it with the bat.
-            PixelArt.Sprite(g, Head, 57 + (int)Math.Round((p.Shoulder - 65) * 0.3), ground - 49, Blue);
+            uniform.DrawSprite(g, Head, 57 + (int)Math.Round((p.Shoulder - 65) * 0.3), ground - 49, true);
 
             PointF hands = new PointF(p.HandX, ground + p.HandY);
             float extending = age >= BaseballSession.SwingContactDelay && age < 0.2 ? 1 : 0;

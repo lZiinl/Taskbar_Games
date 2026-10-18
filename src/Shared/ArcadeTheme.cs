@@ -46,6 +46,15 @@ namespace TaskbarGames.Shared
             // 메뉴 경계 안쪽에 형광색 1픽셀 테두리를 그린다.
             protected override void OnRenderToolStripBorder(ToolStripRenderEventArgs e)
             { using (Pen p = new Pen(Neon)) e.Graphics.DrawRectangle(p, 0, 0, e.ToolStrip.Width - 1, e.ToolStrip.Height - 1); }
+            protected override void OnRenderImageMargin(ToolStripRenderEventArgs e)
+            { using (Brush background = new SolidBrush(Black)) e.Graphics.FillRectangle(background, e.AffectedBounds); }
+            protected override void OnRenderItemCheck(ToolStripItemImageRenderEventArgs e)
+            {
+                Rectangle box = e.ImageRectangle;
+                int x = box.Left + box.Width / 2 - 4, y = box.Top + box.Height / 2;
+                using (Pen check = new Pen(Neon, 2))
+                    e.Graphics.DrawLines(check, new[] { new Point(x, y), new Point(x + 3, y + 3), new Point(x + 8, y - 3) });
+            }
             // 선택된 활성 항목만 어두운 초록색으로 채운다. 비활성 항목은 강조하지 않는다.
             protected override void OnRenderMenuItemBackground(ToolStripItemRenderEventArgs e)
             {

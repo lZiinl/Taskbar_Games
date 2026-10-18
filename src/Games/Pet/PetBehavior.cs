@@ -3,7 +3,7 @@ using System.Collections.Generic;
 
 namespace TaskbarGames.Games.Pet
 {
-    public enum PetAction { Idle, Walk, Sleep, Love, Eat }
+    public enum PetAction { Idle, Walk, Sleep, Love, Eat, Cola, Popcorn, Read, WatchTV }
     public sealed class Acorn
     {
         public double X { get; internal set; }
@@ -18,6 +18,9 @@ namespace TaskbarGames.Games.Pet
         readonly System.Collections.ObjectModel.ReadOnlyCollection<Acorn> foodView;
         bool attendingCare;
         double cooldown;
+        double nextActivity = 15, walkRemaining;
+        public static bool IsLeisure(PetAction action)
+        { return action == PetAction.Cola || action == PetAction.Popcorn || action == PetAction.Read || action == PetAction.WatchTV; }
         public const int MaxAcorns = 5;
         public PetSession Stats { get; private set; }
         public PetAction Action { get; private set; }
@@ -64,6 +67,7 @@ namespace TaskbarGames.Games.Pet
         public bool Jump()
         {
             if (JumpAge >= 0 || Action == PetAction.Eat) return false;
+            if (IsLeisure(Action)) ResumeWalk();
             if (Action == PetAction.Sleep) { Action = PetAction.Idle; Remaining = 120; attendingCare = false; }
             JumpAge = 0; return true;
         }
@@ -93,8 +97,22 @@ namespace TaskbarGames.Games.Pet
                 }
                 return;
             }
+            if (IsLeisure(Action))
+            {
+                if (Remaining > 0) return;
+                ResumeWalk();
+            }
             if (Action == PetAction.Walk)
             {
+                // 산책 중 잠깐 즐기는 간식과 취미는 돌봄 수치나 식사 횟수를 바꾸지 않는다.
+                if (JumpAge < 0) nextActivity -= dt;
+                if (JumpAge < 0 && nextActivity <= 0 && Remaining > 0)
+                {
+                    walkRemaining = Remaining;
+                    Action = (PetAction)((int)PetAction.Cola + random.Next(4));
+                    Remaining = Action == PetAction.Read || Action == PetAction.WatchTV ? 12 : 7;
+                    return;
+                }
                 X += Direction * 26 * dt;
                 if (X <= left || X >= right - 76) Direction = -Direction;
                 SetBounds(left, right);
@@ -105,6 +123,11 @@ namespace TaskbarGames.Games.Pet
                 else if (random.Next(3) == 0) { Action = PetAction.Sleep; Remaining = 180 + random.Next(121); }
                 else { Action = PetAction.Walk; Remaining = 120 + random.Next(121); Direction = random.Next(2) == 0 ? -1 : 1; }
             }
+        }
+        void ResumeWalk()
+        {
+            Action = PetAction.Walk; Remaining = Math.Max(10, walkRemaining);
+            nextActivity = 12 + random.Next(17);
         }
     }
 }

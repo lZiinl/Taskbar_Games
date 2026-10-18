@@ -3,6 +3,7 @@ using System.Globalization;
 using System.IO;
 using System.Xml;
 using System.Xml.Serialization;
+using System.Collections.Generic;
 using Microsoft.Win32;
 
 namespace TaskbarGames.Shared
@@ -10,7 +11,7 @@ namespace TaskbarGames.Shared
     // 버전이 있는 단일 프로필. 게임 창을 닫아도 기록과 설정을 유지한다.
     public sealed class GameData
     {
-        public int Version = 1;
+        public int Version = 3;
         public string MonitorDevice = "";
         public int RunnerBest;
         public int BaseballBestDistance;
@@ -20,6 +21,14 @@ namespace TaskbarGames.Shared
         public int TankColor = 0x5DB86A;
         public double PetFullness = 75, PetMood = 75;
         public int PetMeals;
+        public string BatterTeam = "", PitcherTeam = "", PetAnimal = "squirrel";
+        public GameRecord FortressPractice = new GameRecord(), FortressChallenge = new GameRecord();
+        public GameRecord BaseballPractice = new GameRecord(), BaseballChallenge = new GameRecord();
+        public GameRecord RunnerPractice = new GameRecord(), RunnerChallenge = new GameRecord();
+        public List<string> UnlockedTitles = new List<string>();
+        public string FortressTitle = "", BaseballTitle = "", RunnerTitle = "";
+        public List<TitleUnlock> TitleUnlocks = new List<TitleUnlock>();
+        public DateTime? RunnerBestAtUtc, BaseballBestDistanceAtUtc, FortressBestComboAtUtc;
 
         internal void Normalize()
         {
@@ -35,6 +44,17 @@ namespace TaskbarGames.Shared
             PetFullness = Clamp(PetFullness); PetMood = Clamp(PetMood);
             PetMeals = Math.Max(0, PetMeals);
             MonitorDevice = MonitorDevice ?? "";
+            FortressPractice = FortressPractice ?? new GameRecord(); FortressChallenge = FortressChallenge ?? new GameRecord();
+            BaseballPractice = BaseballPractice ?? new GameRecord(); BaseballChallenge = BaseballChallenge ?? new GameRecord();
+            RunnerPractice = RunnerPractice ?? new GameRecord(); RunnerChallenge = RunnerChallenge ?? new GameRecord();
+            foreach (GameRecord record in new[] { FortressPractice, FortressChallenge, BaseballPractice, BaseballChallenge, RunnerPractice, RunnerChallenge }) record.Normalize();
+            UnlockedTitles = UnlockedTitles ?? new List<string>();
+            UnlockedTitles = new List<string>(new HashSet<string>(UnlockedTitles.FindAll(id => Achievements.Find(id) != null)));
+            TitleUnlocks = TitleUnlocks ?? new List<TitleUnlock>();
+            HashSet<string> seenTitles = new HashSet<string>();
+            TitleUnlocks = TitleUnlocks.FindAll(item => item != null && UnlockedTitles.Contains(item.Id) && seenTitles.Add(item.Id));
+            foreach (GameKind game in Enum.GetValues(typeof(GameKind)))
+                if (!Achievements.Equip(this, game, Achievements.Equipped(this, game) ?? "")) Achievements.Equip(this, game, "");
         }
         static double Clamp(double value) { return Double.IsNaN(value) ? 75 : Math.Max(0, Math.Min(100, value)); }
     }
@@ -76,8 +96,13 @@ namespace TaskbarGames.Shared
             {
                 GameData result = (GameData)new XmlSerializer(typeof(GameData)).Deserialize(reader);
                 if (result == null) throw new InvalidOperationException("Empty profile.");
-                if (result.Version != 1) throw new NotSupportedException();
-                result.Normalize(); return result;
+                if (result.Version < 1 || result.Version > 3) throw new NotSupportedException();
+                // 기존 러너 최고점은 연습 기록으로 이전한다. 도전 기록이나 칭호로 소급하지 않는다.
+                bool legacy = result.Version == 1;
+                result.Version = 3;
+                result.Normalize();
+                if (legacy) result.RunnerPractice.BestScore = Math.Max(result.RunnerPractice.BestScore, result.RunnerBest);
+                return result;
             }
         }
 

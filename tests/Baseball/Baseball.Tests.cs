@@ -150,7 +150,7 @@ public static class BaseballRegressionTests
     static void RenderSwingPoses(string artifacts)
     {
         Type animator = typeof(BaseballGame).Assembly.GetType("TaskbarGames.Games.Baseball.BatterAnimation");
-        MethodInfo draw = animator.GetMethod("Draw", BindingFlags.Public | BindingFlags.Static);
+        MethodInfo draw = animator.GetMethod("Draw", new[] { typeof(Graphics), typeof(int), typeof(double) });
         double[] times = { -1, 0.02, 0.045, BaseballSession.SwingContactDelay, 0.13, 0.22, 0.32, BaseballSession.SwingDuration };
         using (Bitmap strip = new Bitmap(128 * times.Length, 100))
         using (Graphics g = Graphics.FromImage(strip))

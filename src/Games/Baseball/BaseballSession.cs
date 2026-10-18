@@ -2,6 +2,7 @@
 // 시간은 초, 타구 거리는 미터이며 렌더링 프레임 수나 화면 해상도에 의존하지 않는다.
 
 using System;
+using TaskbarGames.Shared;
 
 namespace TaskbarGames.Games.Baseball
 {
@@ -24,8 +25,12 @@ namespace TaskbarGames.Games.Baseball
     public sealed class BaseballSession
     {
         // 투구마다 이 범위에서 도착 시간을 무작위 선택한다. 값이 작을수록 공이 빨리 도착한다.
-        public const double MinPitchSeconds = 1.05;
-        public const double MaxPitchSeconds = 1.65;
+        // 게임 속도 환산: 기존 최단 비행 1.05초를 140km/h로 정의한다.
+        public const double PreviousMaxPitchKph = 140;
+        public const double MinPitchKph = 90;
+        public const double MaxPitchKph = PreviousMaxPitchKph + 20;
+        public const double MinPitchSeconds = 1.05 * PreviousMaxPitchKph / MaxPitchKph;
+        public const double MaxPitchSeconds = 1.05 * PreviousMaxPitchKph / MinPitchKph;
         // 입력 즉시 타격하지 않고 0.08초 뒤 배트 접촉을 예약한다. 애니메이션의 접촉 키프레임과 공유한다.
         public const double SwingContactDelay = 0.08;
         public const double SwingDuration = 0.46;
@@ -34,7 +39,7 @@ namespace TaskbarGames.Games.Baseball
         public const double ReadySeconds = 0.85;
         public const double ResultSeconds = 1.4;
         public const int FenceDistance = 130;
-        public const int FenceHeight = 18;
+        public const double FenceHeight = 18 * 1.2;
         public const int BallRadius = 3;
         readonly Random random;
         // swung은 한 투구당 입력 1회를 보장하고 contactResolved는 예약된 접촉 판정의 중복 실행을 막는다.
@@ -46,6 +51,12 @@ namespace TaskbarGames.Games.Baseball
         public bool Active { get; private set; }
         public double Elapsed { get; private set; }
         public double PitchSeconds { get; private set; }
+        public double PitchKph { get; private set; }
+        public GameMode Mode { get; private set; }
+        public int HomeRuns { get; private set; }
+        public bool IsComplete { get { return Mode == GameMode.Challenge && Attempts >= 10; } }
+        public RunStats Stats { get { return new RunStats { Score = Score, Attempts = Attempts, Hits = Hits, HomeRuns = HomeRuns, BestDistance = BestDistance, Ended = IsComplete }; } }
+        public void Restart() { Score = 0; Attempts = Hits = HomeRuns = BestDistance = 0; ResetRound(); }
         // 스윙 시작 후 경과 초. -1은 스윙하지 않는 기본 자세를 의미한다.
         public double SwingAge { get; private set; }
         public BattingResult LastHit { get; private set; }
@@ -97,6 +108,7 @@ namespace TaskbarGames.Games.Baseball
         public BaseballSession() : this(new Random()) { }
         // null 난수 공급자를 거부하고 첫 투구를 준비 상태로 초기화한다.
         public BaseballSession(Random randomSource) : this(randomSource, 0, 0, 0, 0) { }
+        public BaseballSession(Random randomSource, GameMode mode) : this(randomSource, 0, 0, 0, 0) { Mode = mode; }
         public BaseballSession(Random randomSource, int best, long score, int attempts, int hits)
         {
             BestDistance = Math.Max(0, Math.Min(160, best)); Score = Math.Max(0, score);
@@ -144,6 +156,7 @@ namespace TaskbarGames.Games.Baseball
         // 이번 공의 상태만 초기화한다. 누적 점수·최고 거리·시도/안타 횟수는 다음 투구에도 유지한다.
         public void ResetRound()
         {
+            if (IsComplete) return;
             Phase = BaseballPhase.Ready;
             Elapsed = 0;
             swung = contactResolved = false;
@@ -155,7 +168,7 @@ namespace TaskbarGames.Games.Baseball
         // 반환값은 UI가 스윙 시작으로 인한 다시 그리기를 요청할지 결정하는 데 쓰인다.
         public bool Swing()
         {
-            if (!Active || Phase != BaseballPhase.Pitch || swung) return false;
+            if (IsComplete || !Active || Phase != BaseballPhase.Pitch || swung) return false;
             swung = true;
             SwingAge = 0;
             contactTime = Elapsed + SwingContactDelay;
@@ -167,6 +180,7 @@ namespace TaskbarGames.Games.Baseball
         public bool Advance(double seconds)
         {
             if (!Active || seconds <= 0 || Double.IsNaN(seconds) || Double.IsInfinity(seconds)) return false;
+            if (IsComplete && Elapsed >= ResultSeconds && SwingAge < 0) return false;
             bool wasSwinging = SwingAge >= 0;
             if (SwingAge >= 0) SwingAge = SwingAge + seconds > SwingDuration ? -1 : SwingAge + seconds;
             Elapsed += seconds;
@@ -175,7 +189,8 @@ namespace TaskbarGames.Games.Baseball
                 case BaseballPhase.Ready:
                     if (Elapsed >= ReadySeconds)
                     {
-                        PitchSeconds = MinPitchSeconds + random.NextDouble() * (MaxPitchSeconds - MinPitchSeconds);
+                        PitchKph = MinPitchKph + random.NextDouble() * (MaxPitchKph - MinPitchKph);
+                        PitchSeconds = 1.05 * PreviousMaxPitchKph / PitchKph;
                         Phase = BaseballPhase.Pitch;
                         Elapsed = 0;
                     }
@@ -204,7 +219,7 @@ namespace TaskbarGames.Games.Baseball
                     if (Elapsed >= FlightSeconds) CompleteAttempt();
                     return true;
                 case BaseballPhase.Result:
-                    if (Elapsed >= ResultSeconds) { ResetRound(); return true; }
+                    if (!IsComplete && Elapsed >= ResultSeconds) { ResetRound(); return true; }
                     return wasSwinging;
             }
             return false;
@@ -219,6 +234,7 @@ namespace TaskbarGames.Games.Baseball
             if (LastHit.Hit)
             {
                 if (Hits < Int32.MaxValue) Hits++;
+                if (LastHit.HomeRun && HomeRuns < Int32.MaxValue) HomeRuns++;
                 Score = Score > Int64.MaxValue - LastHit.Points ? Int64.MaxValue : Score + LastHit.Points;
                 BestDistance = Math.Max(BestDistance, LastHit.Distance);
             }

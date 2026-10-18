@@ -8,7 +8,7 @@ namespace TaskbarGames.Launcher
     // 런처와 같은 58×74 창. 네 대씩 표시하고 다섯 대 이상이면 아래 버튼으로 넘긴다.
     public sealed class MonitorSelectionForm : Form
     {
-        readonly ToolTip hints = new ToolTip();
+        readonly ArcadeHints hints = new ArcadeHints();
         readonly Timer timer = new Timer();
         DisplayInfo[] displays;
         int page;
@@ -65,7 +65,7 @@ namespace TaskbarGames.Launcher
                 };
                 Controls.Add(button);
             }
-            Button footer = new MonitorButton(displays.Length > 4 ? "NEXT" : "EXIT", false, false);
+            Button footer = new PixelMenuButton(displays.Length > 4 ? "NEXT" : "EXIT");
             footer.Bounds = new Rectangle(3, 59, 52, 12);
             footer.AccessibleName = displays.Length > 4 ? "다음 모니터 페이지" : "종료";
             hints.SetToolTip(footer, displays.Length > 4 ? "모니터 " + (page + 1) + "/" + ((displays.Length + 3) / 4) + " 페이지 · 다음 보기 · Esc 종료" : "종료 (Esc)");

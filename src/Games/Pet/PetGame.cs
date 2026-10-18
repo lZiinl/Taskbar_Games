@@ -6,6 +6,7 @@ using System.Drawing;
 using System.Collections.Generic;
 using System.Windows.Forms;
 using TaskbarGames.Shared;
+using TaskbarGames.Launcher;
 
 namespace TaskbarGames.Games.Pet
 {
@@ -14,8 +15,10 @@ namespace TaskbarGames.Games.Pet
         readonly Timer timer = new Timer();
         readonly Stopwatch clock = Stopwatch.StartNew();
         readonly ToolStripDropDown menu = new ToolStripDropDown();
+        readonly ContextMenuStrip animalMenu = new ContextMenuStrip();
+        PetAnimal animal;
         readonly ToolStripButton status = new ToolStripButton();
-        readonly ToolTip hint = new ToolTip();
+        readonly ArcadeHints hint = new ArcadeHints();
         readonly GameStore store;
         readonly PetBehavior behavior;
         readonly Dictionary<Acorn, AcornMarker> markers = new Dictionary<Acorn, AcornMarker>();
@@ -25,6 +28,7 @@ namespace TaskbarGames.Games.Pet
         internal PetGame(bool loadSettings)
         {
             store = loadSettings ? GameEnvironment.Store : new GameStore();
+            animal = PetAppearance.Parse(store.Data.PetAnimal);
             behavior = new PetBehavior(new PetSession(store.Data.PetFullness, store.Data.PetMood, store.Data.PetMeals),
                 new Random(), GameEnvironment.Display.WorkingArea.Left + 120);
             behavior.Ate += delegate(Acorn acorn) {
@@ -32,18 +36,19 @@ namespace TaskbarGames.Games.Pet
                 if (markers.TryGetValue(acorn, out marker)) { markers.Remove(acorn); marker.Dispose(); }
                 SaveState(); UpdateStatus();
             };
-            Text = "Taskbar_Games - Squirrel"; Icon = ArcadeTheme.AppIcon;
+            Text = "Taskbar_Games - " + PetAppearance.Name(animal); Icon = ArcadeTheme.AppIcon;
             AutoScaleMode = AutoScaleMode.None; FormBorderStyle = FormBorderStyle.None;
             MinimumSize = MaximumSize = new Size(76, 56); ClientSize = new Size(76, 56);
             BackColor = TransparencyKey = Color.Magenta; TopMost = true; DoubleBuffered = true;
             StartPosition = FormStartPosition.Manual; PositionPet();
             ArcadeTheme.Style(menu); menu.LayoutStyle = ToolStripLayoutStyle.HorizontalStackWithOverflow;
-            menu.AutoSize = false; menu.Size = new Size(130, 34); menu.ShowItemToolTips = true;
+            menu.AutoSize = false; menu.Size = new Size(154, 34);
             status.Image = PetMenuIcon("info"); menu.Items.Add(status);
             menu.Items.Add(new ToolStripButton("도토리 놓기", PetMenuIcon("food"), delegate { menu.Close(); BeginInvoke(new Action(PlaceFood)); }));
             menu.Items.Add(new ToolStripButton("쓰다듬기", PetMenuIcon("love"), delegate { menu.Close(); Stroke(); }));
             menu.Items.Add(new ToolStripButton("낮잠 자기 / 깨우기", PetMenuIcon("sleep"), delegate { menu.Close(); behavior.ToggleSleep(); Invalidate(); }));
             menu.Items.Add(new ToolStripButton("게임 선택으로 돌아가기 (Esc)", PetMenuIcon("back"), delegate { menu.Close(); Close(); }));
+            menu.Items.Add(new ToolStripButton("동물 변경", PetMenuIcon("animal"), delegate { menu.Close(); BeginInvoke(new Action(ShowAnimalMenu)); }));
             foreach (ToolStripItem item in menu.Items)
             {
                 item.DisplayStyle = ToolStripItemDisplayStyle.Image; item.ImageScaling = ToolStripItemImageScaling.None;
@@ -51,9 +56,22 @@ namespace TaskbarGames.Games.Pet
                 item.Margin = Padding.Empty; item.Padding = Padding.Empty;
                 item.ToolTipText = item.AccessibleName = item.Text;
             }
+            hint.AttachMenu(this, menu);
+            ArcadeTheme.Style(animalMenu); animalMenu.ImageScalingSize = new Size(36, 30);
+            animalMenu.ShowImageMargin = true; animalMenu.ShowCheckMargin = true;
+            foreach (PetAnimal candidate in Enum.GetValues(typeof(PetAnimal)))
+            {
+                PetAnimal choice = candidate;
+                ToolStripMenuItem item = new ToolStripMenuItem(PetAppearance.Name(choice), PetAppearance.Icon(choice), delegate { SelectAnimal(choice); });
+                item.Tag = choice; item.ToolTipText = PetAppearance.Name(choice) + "로 변경 · 포만감과 기분은 이어집니다";
+                animalMenu.Items.Add(item);
+            }
+            hint.AttachMenu(this, animalMenu);
+            animalMenu.Opening += delegate { menuOpen = true; };
+            animalMenu.Closed += delegate { menuOpen = false; lastTime = clock.Elapsed.TotalSeconds; };
             menu.Opening += delegate { menuOpen = true; UpdateStatus(); };
             menu.Closed += delegate { menuOpen = false; lastTime = clock.Elapsed.TotalSeconds; };
-            hint.SetToolTip(this, "다람쥐 · 클릭해서 쓰다듬기 · SPACE 점프 · 우클릭으로 먹이와 낮잠");
+            UpdatePetHint();
             MouseDown += delegate(object sender, MouseEventArgs e) {
                 if (e.Button == MouseButtons.Left) Stroke();
                 else if (e.Button == MouseButtons.Right) menu.Show(this, e.Location);
@@ -66,6 +84,19 @@ namespace TaskbarGames.Games.Pet
             };
             timer.Interval = 40; timer.Tick += Tick; timer.Start();
             FormClosing += delegate { SaveState(); };
+        }
+        void UpdatePetHint()
+        { hint.SetToolTip(this, PetAppearance.Name(animal) + " · 클릭해서 쓰다듬기 · SPACE 점프 · 우클릭으로 돌봄과 동물 변경"); }
+        void ShowAnimalMenu()
+        {
+            if (IsDisposed) return;
+            foreach (ToolStripMenuItem item in animalMenu.Items) item.Checked = (PetAnimal)item.Tag == animal;
+            animalMenu.Show(this, new Point(0, 0), ToolStripDropDownDirection.AboveRight);
+        }
+        void SelectAnimal(PetAnimal choice)
+        {
+            animal = choice; store.Data.PetAnimal = choice.ToString().ToLowerInvariant(); SaveState();
+            Text = "Taskbar_Games - " + PetAppearance.Name(animal); UpdatePetHint(); Invalidate();
         }
         void UpdateStatus()
         {
@@ -93,6 +124,12 @@ namespace TaskbarGames.Games.Pet
                 if (kind == "food") AcornMarker.DrawAcorn(g, 3, 4);
                 else if (kind == "love") DrawHeart(g, 2, 3, 2);
                 else if (kind == "sleep") { PixelArt.Text(g, "Z", ArcadeTheme.Cyan, 2, 8); PixelArt.Text(g, "Z", ArcadeTheme.Cyan, 10, 2); }
+                else if (kind == "animal")
+                {
+                    RoundPixel(g, ArcadeTheme.Cyan, 5, 9, 9, 7, 2);
+                    Box(g, ArcadeTheme.Cyan, 2, 5, 3, 4); Box(g, ArcadeTheme.Cyan, 6, 2, 3, 4);
+                    Box(g, ArcadeTheme.Cyan, 10, 2, 3, 4); Box(g, ArcadeTheme.Cyan, 14, 5, 3, 4);
+                }
                 else if (kind == "info")
                 {
                     using (Pen pen = new Pen(ArcadeTheme.Neon)) g.DrawRectangle(pen, 2, 2, 13, 13);
@@ -253,14 +290,17 @@ namespace TaskbarGames.Games.Pet
         {
             base.OnPaint(e);
             double time = clock.Elapsed.TotalSeconds;
-            DrawSquirrel(e.Graphics, 22, 27, behavior.Direction > 0, behavior.Pose, time, 1);
+            PetAppearance.Draw(e.Graphics, animal, 22, 27, behavior.Direction > 0, behavior.Pose, time, 1);
             if (behavior.Action == PetAction.Love)
             {
                 int rise = (int)((4 - behavior.Remaining) * 2.5);
                 DrawHeart(e.Graphics, 32, 19 - rise, 1);
                 DrawHeart(e.Graphics, 49, 26 - rise, 1);
             }
-            string label = behavior.Action == PetAction.Sleep ? "Z Z Z" : behavior.Action == PetAction.Eat ? "YUM" : behavior.Stats.Fullness < 25 && behavior.Action != PetAction.Love ? "ACORN" : "";
+            string label = behavior.Action == PetAction.Sleep ? "Z Z Z" : behavior.Action == PetAction.Eat ? "YUM"
+                : behavior.Action == PetAction.Cola ? "COLA" : behavior.Action == PetAction.Popcorn ? "POP"
+                : behavior.Action == PetAction.Read ? "READ" : behavior.Action == PetAction.WatchTV ? "TV"
+                : behavior.Stats.Fullness < 25 && behavior.Action != PetAction.Love ? "ACORN" : "";
             if (label.Length > 0)
             {
                 Box(e.Graphics, ArcadeTheme.Black, 17, 5, PixelArt.Width(label) + 10, 17);
@@ -282,6 +322,8 @@ namespace TaskbarGames.Games.Pet
                 timer.Dispose();
                 foreach (ToolStripItem item in menu.Items) if (item.Image != null) item.Image.Dispose();
                 menu.Dispose(); hint.Dispose();
+                foreach (ToolStripItem item in animalMenu.Items) if (item.Image != null) item.Image.Dispose();
+                animalMenu.Dispose();
                 foreach (AcornMarker marker in markers.Values) marker.Dispose();
                 markers.Clear();
             }

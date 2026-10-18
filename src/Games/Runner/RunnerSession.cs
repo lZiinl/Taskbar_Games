@@ -4,11 +4,12 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using TaskbarGames.Shared;
 
 namespace TaskbarGames.Games.Runner
 {
-    // Ready는 시작 대기, Running은 이동/점프 진행, GameOver는 충돌 후 재시작 대기다.
-    public enum RunnerPhase { Ready, Running, GameOver }
+    // Ready는 시작 대기, Running은 주행, GameOver는 충돌, Cleared는 120초 도전 성공이다.
+    public enum RunnerPhase { Ready, Running, GameOver, Cleared }
     // 장애물의 왼쪽 X와 크기를 논리 픽셀로 보관한다. 지면 높이는 0으로 가정한다.
     public sealed class RunnerObstacle
     {
@@ -27,9 +28,16 @@ namespace TaskbarGames.Games.Runner
         public const double MaximumSpeed = InitialSpeed * 4;
         public const double AccelerationSeconds = 180;
         // Enough room for a full jump, landing and another press, even at maximum speed.
-        // 최대 점프의 왕복 시간 2v/g에 재입력 여유 0.2초와 여백 24px를 더한다.
+        // 최대 점프의 왕복 시간 2v/g에 재입력 여유 0.10초와 여백 8px를 더한다.
         // 최고 속도로 산정하므로 앞서 생성한 장애물도 이후 가속 때문에 간격이 부족해지지 않는다.
-        public const double MinimumGap = MaximumSpeed * (2 * 290.0 / 850 + 0.2) + 24;
+        // 기존 518~878px보다 조밀한 간격. 최대 점프 후 약 0.10초의 재입력 여유를 둔다.
+        public const double MinimumGap = MaximumSpeed * (2 * 290.0 / 850 + 0.10) + 8;
+        public const double ChallengeSeconds = 120;
+        public GameMode Mode { get; private set; }
+        public double SurvivalSeconds { get { return elapsed; } }
+        public bool IsComplete { get { return Phase == RunnerPhase.GameOver || Phase == RunnerPhase.Cleared; } }
+        public RunStats Stats { get { return new RunStats { Score = Score, Seconds = elapsed, Ended = IsComplete, Cleared = Phase == RunnerPhase.Cleared }; } }
+        public void Restart() { ResetForLayout(); }
         public RunnerPhase Phase { get; private set; }
         public bool Active { get; set; }
         // 지면으로부터 올라간 높이. 화면에 그릴 때는 ground - Height로 Y축 방향을 뒤집는다.
@@ -38,13 +46,14 @@ namespace TaskbarGames.Games.Runner
         public int Best { get; private set; }
         // 이동 10픽셀당 1점. 저장된 최고 기록은 생성자로 받고, 파일 저장은 UI가 공통 저장 계층에 위임한다.
         public int Score { get { return (int)(Distance / 10); } }
-        public double Speed { get { return InitialSpeed + (MaximumSpeed - InitialSpeed) * Math.Min(1, elapsed / AccelerationSeconds); } }
+        public double Speed { get { return Mode == GameMode.Challenge ? MaximumSpeed : InitialSpeed + (MaximumSpeed - InitialSpeed) * Math.Min(1, elapsed / AccelerationSeconds); } }
         // 목록 추가/삭제는 모델만 수행하도록 읽기 전용 래퍼를 제공한다.
         // 각 장애물 자체는 참조 객체이므로 렌더러는 필드를 읽기만 해야 한다.
         public IList<RunnerObstacle> Obstacles { get { return obstacles.AsReadOnly(); } }
         public RunnerSession() : this(new Random()) { }
         // 고정 시드 Random을 주입하면 테스트에서 동일한 장애물 순서를 재현할 수 있다.
         public RunnerSession(Random source) : this(source, 0) { }
+        public RunnerSession(Random source, GameMode mode, int best) : this(source, best) { Mode = mode; }
         public RunnerSession(Random source, int best)
         {
             if (source == null) throw new ArgumentNullException("source");
@@ -58,7 +67,7 @@ namespace TaskbarGames.Games.Runner
             if (Phase != RunnerPhase.Running)
             {
                 Phase = RunnerPhase.Running; Distance = Height = velocity = accumulator = elapsed = 0;
-                obstacles.Clear(); spawnIn = 140;
+                obstacles.Clear(); spawnIn = Mode == GameMode.Challenge ? 0 : 140;
             }
             if (Height > 0 || velocity > 0) return false;
             velocity = 290; return true;
@@ -89,12 +98,14 @@ namespace TaskbarGames.Games.Runner
                 if (spawnIn <= 0)
                 {
                     // 작은/큰 선인장과 높이를 무작위로 고른다. 생성 지점은 창 오른쪽 12픽셀 바깥이다.
-                    int cactusWidth = random.Next(2) == 0 ? 11 : 20;
+                    int cactusWidth = random.Next(3) == 0 ? 28 : random.Next(2) == 0 ? 11 : 20;
                     obstacles.Add(new RunnerObstacle { X = width + 12, Width = cactusWidth, Height = random.Next(17, 26) });
                     // Distance gaps do not shrink when speed ramps up later.
                     // 앞 장애물의 너비까지 포함해 다음 장애물의 왼쪽 좌표 간 거리를 정한다.
-                    // +=로 임계값을 지나친 이동 거리도 보존하고, 0~360px를 더해 리듬을 다양하게 만든다.
-                    spawnIn += cactusWidth + MinimumGap + random.NextDouble() * 360;
+                    // +=로 초과 이동 거리도 보존한다. 조밀한 구간과 긴 회복 구간을 섞는다.
+                    double gap = random.Next(3) == 0 ? MinimumGap + 100 + random.NextDouble() * 180
+                        : MinimumGap + random.NextDouble() * 65;
+                    spawnIn += cactusWidth + gap;
                 }
                 for (int i = obstacles.Count - 1; i >= 0; i--)
                 {
@@ -105,6 +116,10 @@ namespace TaskbarGames.Games.Runner
                     RectangleF body = new RectangleF(46, (float)(-Height - 23), 15, 21);
                     RectangleF cactus = new RectangleF((float)obstacle.X + 2, -obstacle.Height + 2, obstacle.Width - 4, obstacle.Height - 2);
                     if (body.IntersectsWith(cactus)) { Phase = RunnerPhase.GameOver; Best = Math.Max(Best, Score); break; }
+                }
+                if (Mode == GameMode.Challenge && Phase == RunnerPhase.Running && elapsed >= ChallengeSeconds - 0.0000001)
+                {
+                    elapsed = ChallengeSeconds; Phase = RunnerPhase.Cleared; Best = Math.Max(Best, Score);
                 }
             }
         }

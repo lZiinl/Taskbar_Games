@@ -66,7 +66,7 @@ public static class SharedRegressionTests
         string corruptPath = Path.Combine(directory, "corrupt.xml"); File.WriteAllText(corruptPath, "broken");
         GameStore corrupt = new GameStore(corruptPath); corrupt.Load();
         Assert(!corrupt.Save() && File.ReadAllText(corruptPath) == "broken", "Unreadable original overwritten.");
-        string futurePath = Path.Combine(directory, "future.xml"); File.WriteAllText(futurePath, "<GameData><Version>2</Version></GameData>");
+        string futurePath = Path.Combine(directory, "future.xml"); File.WriteAllText(futurePath, "<GameData><Version>4</Version></GameData>");
         GameStore future = new GameStore(futurePath); future.Load(); Assert(!future.Save(), "Future profile overwritten.");
         string invalidPath = Path.Combine(directory, "invalid.xml");
         File.WriteAllText(invalidPath, "<GameData><Version>1</Version><RunnerBest>-1</RunnerBest><PetFullness>NaN</PetFullness><PetMood>150</PetMood><PetMeals>-2</PetMeals><TankColor>-4</TankColor></GameData>");
@@ -197,10 +197,11 @@ public static class SharedRegressionTests
         using (PetGame pet = new PetGame())
         using (FortressGame fortress = new FortressGame())
         {
-            Assert(((BaseballSession)Field(baseball, "session")).Score == 1600 && ((BaseballSession)Field(baseball, "session")).BestDistance == 160, "Baseball record not restored.");
+            Assert(((BaseballSession)Field(baseball, "session")).Score == 0 && GameEnvironment.Store.Data.BaseballBestDistance == 160
+                && GameEnvironment.Store.Data.BaseballPractice.BestScore == 1600, "Baseball record not restored separately from new run.");
             Assert(((RunnerSession)Field(runner, "session")).Best == best, "Runner best not restored.");
             Assert(((PetBehavior)Field(pet, "behavior")).Stats.Meals == 1, "Pet not restored.");
-            Assert(((FortressSession)Field(fortress, "session")).Shots == 1, "Fortress not restored.");
+            Assert(((FortressSession)Field(fortress, "session")).Shots == 0 && GameEnvironment.Store.Data.FortressShots == 1, "New fortress run should start fresh and preserve lifetime records.");
         }
     }
 }

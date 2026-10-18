@@ -8,6 +8,7 @@ using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Windows.Forms;
 using TaskbarGames.Shared;
+using TaskbarGames.Launcher;
 
 namespace TaskbarGames.Games.Fortress
 {
@@ -27,6 +28,8 @@ namespace TaskbarGames.Games.Fortress
         readonly Stopwatch clock = Stopwatch.StartNew();
         readonly FortressSession session;
         readonly GameStore store;
+        ProgressTracker progress;
+        bool resultShown;
         readonly Color ink = ArcadeTheme.Black;
         readonly Color green = ArcadeTheme.Neon;
         // 탱크 문자 스프라이트. DrawPixelSprite에서 색상 코드별로 기본색·명암·윤곽을 해석한다.
@@ -88,7 +91,9 @@ namespace TaskbarGames.Games.Fortress
         // 테스트에서는 false로 레지스트리/레거시 파일 접근을 피한다.
         // 투명 창·입력·포커스 전환·타이머를 구성하며 포커스를 잃으면 충전 상태를 버린다.
         internal FortressGame(bool loadSettings) : this(loadSettings ? GameEnvironment.Store : new GameStore()) { }
-        public FortressGame(GameStore storage)
+        public FortressGame(GameStore storage) : this(storage, GameMode.Practice) { }
+        public FortressGame(GameMode mode) : this(GameEnvironment.Store, mode) { }
+        public FortressGame(GameStore storage, GameMode mode)
         {
             Text = "Taskbar_Games - Fortress";
             Icon = ArcadeTheme.AppIcon;
@@ -101,7 +106,8 @@ namespace TaskbarGames.Games.Fortress
             KeyPreview = true;
             StartPosition = FormStartPosition.Manual;
             store = storage;
-            session = new FortressSession(new Random(), store.Data.FortressHits, store.Data.FortressShots, store.Data.FortressBestCombo);
+            session = new FortressSession(new Random(), mode);
+            progress = new ProgressTracker(store, GameKind.Fortress, mode);
             session.ShotFinished += OnShotFinished;
             SetTankColor(Color.FromArgb((store.Data.TankColor >> 16) & 255, (store.Data.TankColor >> 8) & 255, store.Data.TankColor & 255));
             FormClosing += delegate { SaveRecords(); };
@@ -138,15 +144,15 @@ namespace TaskbarGames.Games.Fortress
         }
 
         // 표시할 숫자 자릿수에 맞춰 점수판 너비를 산정한다. 글자 폭과 닫기 영역 여백을 합친다.
-        static int ScorePanelWidth(int hitCount, int shotCount)
+        static int ScorePanelWidth(long pointScore, int shotCount)
         {
-            return (int)Math.Ceiling(TextWidth(String.Format("{0} HIT / {1} SHOTS", hitCount, shotCount), 1)) + 36;
+            return (int)Math.Ceiling(TextWidth(String.Format("{0} PTS / {1} SHOTS", pointScore, shotCount), 1)) + 36;
         }
 
         // 현재 명중/발사 횟수로 점수판 폭을 갱신한다. 과녁 배치 보정은 별도 함수에서 처리한다.
         void UpdatePanelLayout()
         {
-            panel.Width = ScorePanelWidth(session.Hits, session.Shots);
+            panel.Width = ScorePanelWidth(session.Score, session.Shots);
         }
 
         // 다음 발사·명중으로 숫자 자릿수가 늘어날 때의 HUD 폭까지 미리 확보한다.
@@ -155,7 +161,7 @@ namespace TaskbarGames.Games.Fortress
         {
             // Reserve the next shot's digits before aiming. The sprite is 24 device
             // pixels wide; leave another 8 pixels between it and the score panel.
-            int nextPanelRight = panel.X + ScorePanelWidth(session.Hits == Int32.MaxValue ? session.Hits : session.Hits + 1,
+            int nextPanelRight = panel.X + ScorePanelWidth(session.Score > Int64.MaxValue - 2000 ? Int64.MaxValue : session.Score + 2000,
                 session.Shots == Int32.MaxValue ? session.Shots : session.Shots + 1);
             return Math.Max(panel.Right, nextPanelRight) + (12 + 8) / GameScale;
         }
@@ -167,7 +173,7 @@ namespace TaskbarGames.Games.Fortress
             bool animating = (session.Charging && session.Charge < 1) || session.Flying || debris.Count > 0;
             // A slow idle poll still catches taskbar/work-area changes. Static
             // session.Result labels only need a wakeup when their display time expires.
-            timer.Interval = animating ? 16 : session.Result.Length > 0
+            timer.Interval = animating ? 16 : session.IsComplete ? 250 : session.Result.Length > 0
                 ? Math.Max(1, Math.Min(250, (int)Math.Ceiling(session.ResultRemaining * 1000)))
                 : 250;
         }
@@ -222,6 +228,7 @@ namespace TaskbarGames.Games.Fortress
             if (debris.Count > 0) { UpdateDebris(Math.Min(0.05, elapsed)); changed = true; }
             UpdateTimerInterval(now);
             if (changed) Invalidate();
+            ShowSummary();
         }
 
         void OnShotFinished(bool hit)
@@ -230,12 +237,18 @@ namespace TaskbarGames.Games.Fortress
             if (hit) BurstTarget();
             SaveRecords();
         }
-        void SaveRecords()
+        void SaveRecords() { progress.Record(session.Stats); }
+        void ShowSummary()
         {
-            store.Data.FortressHits = session.Hits;
-            store.Data.FortressShots = session.Shots;
-            store.Data.FortressBestCombo = session.BestCombo;
-            store.Save();
+            if (resultShown || !focused || !session.IsComplete || session.ResultRemaining > 0) return;
+            resultShown = true; timer.Stop();
+            using (ChallengeResultForm result = new ChallengeResultForm(GameKind.Fortress, session.Stats, progress))
+            {
+                if (result.ShowDialog(this) != DialogResult.Retry) { Close(); return; }
+            }
+            session.Restart(); progress = new ProgressTracker(store, GameKind.Fortress, session.Mode);
+            resultShown = false; ResetLayout(); lastTime = clock.Elapsed.TotalSeconds;
+            Activate(); timer.Start(); Invalidate();
         }
 
         // 과녁 주변에 28개 파편을 만든다. 별도 effectRandom을 써 장식 난수가 다음 과녁 위치를 바꾸지 않게 한다.
@@ -279,7 +292,7 @@ namespace TaskbarGames.Games.Fortress
             Graphics g = e.Graphics;
             g.ScaleTransform(GameScale, GameScale);
             g.SmoothingMode = SmoothingMode.None;
-            string score = String.Format("{0} HIT / {1} SHOTS", session.Hits, session.Shots);
+            string score = String.Format("{0} PTS / {1}{2}", session.Score, session.Shots, session.Mode == GameMode.Challenge ? "/10" : " SHOTS");
             PixelRect(g, ink, panel.X, panel.Y, panel.Width, panel.Height);
             DrawPixelText(g, score, 1, focused ? green : Color.LightGray, panel.X + 6, panel.Y + 6);
             PixelRect(g, Color.FromArgb(53, 67, 86), panel.Right - 24, panel.Y + 3, 2, panel.Height - 6);
@@ -302,6 +315,9 @@ namespace TaskbarGames.Games.Fortress
                 DrawPixelText(g, hint, 1, Color.FromArgb(207, 217, 232), panel.X + 6, ground - 42);
             }
 
+            DrawPixelText(g, session.Mode == GameMode.Challenge ? "CHALLENGE" : "PRACTICE", 1, ArcadeTheme.Cyan, panel.X, ground - 70);
+            if (!session.Flying && session.Result.Length == 0)
+                DrawPixelText(g, session.TargetPoints + " PTS", 1, ArcadeTheme.Cyan, session.TargetX - 25, ground - 65);
             DrawPixelSprite(g, TankPixels, TankOriginX, ground);
             if (!(session.WasHit && session.Result.Length > 0)) DrawPixelSprite(g, TargetPixels, session.TargetX, ground);
             foreach (Debris p in debris)
@@ -322,7 +338,8 @@ namespace TaskbarGames.Games.Fortress
             }
             if (session.Result.Length > 0)
             {
-                SizeF size = new SizeF(TextWidth(session.Result, 1), 7 / GameScale);
+                string resultText = session.WasHit ? "HIT +" + session.LastPoints : "MISS";
+                SizeF size = new SizeF(TextWidth(resultText, 1), 7 / GameScale);
                 string comboText = session.WasHit && session.Combo >= 2 ? session.Combo + " COMBO" : "";
                 float labelWidth = Math.Max(size.Width, TextWidth(comboText, 1));
                 float x = session.TargetX + 31;
@@ -330,13 +347,15 @@ namespace TaskbarGames.Games.Fortress
                     x = session.TargetX - 31 - labelWidth;
                 float y = ground - 19 - size.Height / 2;
                 PixelRect(g, ink, x - 6, y - 4, size.Width + 12, size.Height + 8);
-                DrawPixelText(g, session.Result, 1, session.WasHit ? green : Color.FromArgb(255, 135, 141), x, y);
+                DrawPixelText(g, resultText, 1, session.WasHit ? green : Color.FromArgb(255, 135, 141), x, y);
                 if (comboText.Length > 0)
                 {
                     PixelRect(g, ink, x - 6, y - 25, labelWidth + 12, 19);
                     DrawPixelText(g, comboText, 1, Color.FromArgb(255, 218, 123), x, y - 21);
                 }
             }
+            g.ResetTransform();
+            GameUi.DrawBadge(g, store, GameKind.Fortress, progress, (int)(panel.Right * GameScale) + 6, ClientSize.Height - 17);
         }
 
         static readonly Dictionary<char, string> Glyphs = new Dictionary<char, string> {
@@ -346,12 +365,12 @@ namespace TaskbarGames.Games.Fortress
             {'6', "0E10101E11110E"}, {'7', "1F010204080808"},
             {'8', "0E11110E11110E"}, {'9', "0E11110F01010E"},
             {'A', "0E11111F111111"}, {'B', "1E11111E11111E"}, {'C', "0E11101010110E"},
-            {'D', "1E11111111111E"}, {'E', "1F10101E10101F"},
+            {'D', "1E11111111111E"}, {'E', "1F10101E10101F"}, {'G', "0E11101711110E"},
             {'H', "1111111F111111"}, {'I', "0E04040404040E"},
             {'K', "11121418141211"}, {'L', "1010101010101F"},
             {'M', "111B1515111111"}, {'N', "11191915131311"},
             {'O', "0E11111111110E"}, {'P', "1E11111E101010"},
-            {'S', "0F10100E01011E"}, {'T', "1F040404040404"},
+            {'S', "0F10100E01011E"}, {'T', "1F040404040404"}, {'R', "1E11111E141211"}, {'+', "0004041F040400"},
             {'X', "11110A040A1111"}, {'/', "01010204081010"},
             {'%', "191A0204080B13"}
         };

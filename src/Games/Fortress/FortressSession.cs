@@ -1,5 +1,6 @@
-using System;
+﻿using System;
 using System.Drawing;
+using TaskbarGames.Shared;
 
 namespace TaskbarGames.Games.Fortress
 {
@@ -25,9 +26,20 @@ namespace TaskbarGames.Games.Fortress
         public int Shots { get; private set; }
         public int Combo { get; private set; }
         public int BestCombo { get; private set; }
+        public GameMode Mode { get; private set; }
+        public long Score { get; private set; }
+        public int LastPoints { get; private set; }
+        public int TargetPoints { get { return PointsForDistance(TargetX - 55, worldWidth - 55); } }
+        public bool IsComplete { get { return Mode == GameMode.Challenge && Shots >= 10 && !Flying; } }
+        public RunStats Stats { get { return new RunStats { Score = Score, Attempts = Shots, Hits = Hits, BestCombo = BestCombo, Ended = IsComplete }; } }
+        public static int PointsForDistance(double distance, double availableRange)
+        { return (int)Math.Round((100 + 1900 * Math.Max(0, Math.Min(1, distance / Math.Max(1, availableRange)))) / 10) * 10; }
+        public void Restart()
+        { Score = 0; Hits = Shots = Combo = BestCombo = LastPoints = 0; CancelCharge(); Flying = false; Result = ""; ResultRemaining = 0; }
         public event Action<bool> ShotFinished;
 
         public FortressSession() : this(new Random(), 0, 0, 0) { }
+        public FortressSession(Random source, GameMode mode) : this(source, 0, 0, 0) { Mode = mode; }
         public FortressSession(Random source, int hits, int shots, int bestCombo)
         {
             if (source == null) throw new ArgumentNullException("source");
@@ -49,7 +61,7 @@ namespace TaskbarGames.Games.Fortress
         }
         public bool BeginCharge(float minimumTarget)
         {
-            if (Charging || Flying || Result.Length > 0) return false;
+            if (IsComplete || Charging || Flying || Result.Length > 0) return false;
             TargetX = Math.Max(TargetX, minimumTarget); Charging = true; Charge = 0; return true;
         }
         public void CancelCharge() { Charging = false; Charge = 0; }
@@ -70,13 +82,14 @@ namespace TaskbarGames.Games.Fortress
             if (seconds <= 0 || Double.IsNaN(seconds) || Double.IsInfinity(seconds)) return false;
             bool changed = false;
             // 결과 시간은 실제 경과 시간, 물리는 긴 UI 지연을 제한한 시간으로 진행한다.
-            if (Result.Length > 0)
+            if (Result.Length > 0 && ResultRemaining > 0)
             {
                 ResultRemaining -= seconds;
                 if (ResultRemaining <= 0)
                 {
-                    if (WasHit) NewTarget(minimumTarget);
-                    Result = ""; Charge = 0; ResultRemaining = 0; changed = true;
+                    if (!IsComplete && (WasHit || Mode == GameMode.Challenge)) NewTarget(minimumTarget);
+                    if (!IsComplete) Result = "";
+                    Charge = 0; ResultRemaining = 0; changed = true;
                 }
             }
             double dt = Math.Min(0.05, seconds);
@@ -99,6 +112,8 @@ namespace TaskbarGames.Games.Fortress
         void Finish(bool hit)
         {
             Flying = false; WasHit = hit;
+            LastPoints = hit ? TargetPoints : 0;
+            Score = Score > Int64.MaxValue - LastPoints ? Int64.MaxValue : Score + LastPoints;
             if (hit)
             {
                 if (Hits < Int32.MaxValue) Hits++;

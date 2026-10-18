@@ -6,6 +6,7 @@ using System.Diagnostics;
 using System.Drawing;
 using System.Windows.Forms;
 using TaskbarGames.Shared;
+using TaskbarGames.Launcher;
 
 namespace TaskbarGames.Games.Runner
 {
@@ -14,6 +15,8 @@ namespace TaskbarGames.Games.Runner
         // 모델과 UI 타이머는 창 수명에 종속된다. Stopwatch는 시스템 시각 변경과 무관한 경과 시간을 제공한다.
         readonly RunnerSession session;
         readonly GameStore store;
+        ProgressTracker progress;
+        bool resultShown;
         readonly Timer timer = new Timer();
         readonly Stopwatch clock = Stopwatch.StartNew();
         double last;
@@ -32,10 +35,13 @@ namespace TaskbarGames.Games.Runner
         };
         // 투명 배경 창과 입력 이벤트를 구성한다. 전체 화면을 덮는 배경색은 그리지 않는다.
         // Space는 시작/점프/재시작이며, 짧게 떼면 모델에 점프 높이 조정을 요청한다.
-        public RunnerGame()
+        public RunnerGame() : this(GameMode.Practice) { }
+        public RunnerGame(GameMode mode)
         {
             store = GameEnvironment.Store;
-            session = new RunnerSession(new Random(), store.Data.RunnerBest);
+            int best = (int)Math.Min(Int32.MaxValue, Achievements.Record(store.Data, GameKind.Runner, mode).BestScore);
+            session = new RunnerSession(new Random(), mode, best);
+            progress = new ProgressTracker(store, GameKind.Runner, mode);
             FormClosing += delegate { SaveRecords(); };
             Text = "Taskbar_Games - Dino Runner"; Icon = ArcadeTheme.AppIcon;
             AutoScaleMode = AutoScaleMode.None; FormBorderStyle = FormBorderStyle.None;
@@ -54,7 +60,13 @@ namespace TaskbarGames.Games.Runner
                 if (e.KeyCode == Keys.Escape) { Close(); return; }
                 if (e.KeyCode != Keys.Space) return;
                 e.Handled = e.SuppressKeyPress = true;
-                if (!held) { held = true; session.Jump(); last = clock.Elapsed.TotalSeconds; timer.Interval = 16; Invalidate(); }
+                if (!held)
+                {
+                    held = true;
+                    if (session.Mode == GameMode.Challenge && session.IsComplete) { ShowSummary(); return; }
+                    if (session.IsComplete) { SaveRecords(); progress = new ProgressTracker(store, GameKind.Runner, session.Mode); }
+                    session.Jump(); last = clock.Elapsed.TotalSeconds; timer.Interval = 16; Invalidate();
+                }
             };
             KeyUp += delegate(object sender, KeyEventArgs e) {
                 if (e.KeyCode == Keys.Space) { held = false; session.ReleaseJump(); e.Handled = e.SuppressKeyPress = true; }
@@ -64,21 +76,28 @@ namespace TaskbarGames.Games.Runner
             // 멈춘 화면은 매 틱 다시 그리지 않고 입력·상태 변화 시에만 무효화한다.
             timer.Tick += delegate {
                 Rectangle area = GameEnvironment.Display.WorkingArea;
-                if (Left != area.Left || Bottom != area.Bottom || Width != area.Width / 2) { PositionGame(); session.ResetForLayout(); SaveRecords(); Invalidate(); }
+                if (Left != area.Left || Bottom != area.Bottom || Width != area.Width / 2) { SaveRecords(); PositionGame(); session.ResetForLayout(); progress = new ProgressTracker(store, GameKind.Runner, session.Mode); resultShown = false; Invalidate(); }
                 double now = clock.Elapsed.TotalSeconds;
                 bool moving = session.Active && session.Phase == RunnerPhase.Running;
                 session.Advance(now - last, Width); last = now;
-                if (moving && session.Phase == RunnerPhase.GameOver) SaveRecords();
+                if (moving && session.IsComplete) SaveRecords();
                 timer.Interval = moving ? 16 : 250;
                 if (moving) Invalidate();
+                ShowSummary();
             };
             timer.Start();
         }
         // 충돌·종료·화면 변경 시 현재 달리는 중의 기록도 포함한다.
-        void SaveRecords()
+        void SaveRecords() { progress.Record(session.Stats); }
+        void ShowSummary()
         {
-            store.Data.RunnerBest = Math.Max(store.Data.RunnerBest, Math.Max(session.Best, session.Score));
-            store.Save();
+            if (resultShown || !session.Active || session.Mode != GameMode.Challenge || !session.IsComplete) return;
+            resultShown = true; timer.Stop();
+            using (ChallengeResultForm result = new ChallengeResultForm(GameKind.Runner, session.Stats, progress))
+                if (result.ShowDialog(this) != DialogResult.Retry) { Close(); return; }
+            session.Restart(); progress = new ProgressTracker(store, GameKind.Runner, session.Mode);
+            resultShown = false; last = clock.Elapsed.TotalSeconds;
+            Activate(); timer.Start(); Invalidate();
         }
         void PositionGame()
         {
@@ -119,9 +138,12 @@ namespace TaskbarGames.Games.Runner
                 Fill(g, Color.Silver, x + 2, y + 11, cactus.Width - 3, 3);
                 Fill(g, Color.Silver, x + cactus.Width - 4, y + 3, 3, 10);
             }
-            string hint = !session.Active ? "CLICK TO PLAY" : session.Phase == RunnerPhase.Ready ? "SPACE: JUMP" : session.Phase == RunnerPhase.GameOver ? "GAME OVER / SPACE: RETRY" : "";
+            string hint = !session.Active ? "CLICK TO PLAY" : session.Phase == RunnerPhase.Ready ? "SPACE: JUMP" : session.Phase == RunnerPhase.Cleared ? "CHALLENGE CLEAR" : session.Phase == RunnerPhase.GameOver ? "GAME OVER / SPACE: RETRY" : "";
             if (hint.Length > 0) Label(g, hint, 82, ground - 40, session.Phase == RunnerPhase.GameOver ? Color.White : Color.Silver);
             Label(g, "HI " + session.Best.ToString("D5") + "  " + session.Score.ToString("D5"), Math.Max(82, Width - 160), ground - 17, Color.Silver);
+            string modeText = session.Mode == GameMode.Challenge ? "CHAL " + Math.Max(0, 120 - session.SurvivalSeconds).ToString("0.0") + "S / 560 PX/S" : "PRACTICE";
+            Label(g, modeText, Math.Max(82, Width - 205), ground - 62, Color.Silver);
+            GameUi.DrawBadge(g, store, GameKind.Runner, progress, Math.Max(82, Width - 160), ground - 34);
             Label(g, "X", Width - 17, ground - 17, Color.White);
         }
         // 단색 사각형 도우미. 호출마다 만든 Brush를 즉시 해제한다.

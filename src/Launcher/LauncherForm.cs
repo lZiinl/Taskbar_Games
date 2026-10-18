@@ -19,7 +19,7 @@ namespace TaskbarGames.Launcher
         Form activeGame;
         bool shuttingDown;
         readonly Timer displayTimer = new Timer();
-        readonly ToolTip hints = new ToolTip();
+        readonly ArcadeHints hints = new ArcadeHints();
         readonly ContextMenuStrip menu = new ContextMenuStrip();
 
         // 네이티브 최소 창 너비의 자동 확장을 막도록 최소·최대 크기를 동일하게 고정한다.
@@ -39,10 +39,10 @@ namespace TaskbarGames.Launcher
             KeyPreview = true;
             GameCard fortress = new GameCard(false);
             fortress.Bounds = new Rectangle(3, 3, 24, 24);
-            fortress.Click += delegate { OpenGame(delegate { return new FortressGame(); }); };
+            fortress.Click += delegate { SelectGame(GameKind.Fortress); };
             GameCard baseball = new GameCard(true);
             baseball.Bounds = new Rectangle(31, 3, 24, 24);
-            baseball.Click += delegate { OpenGame(delegate { return new BaseballGame(); }); };
+            baseball.Click += delegate { SelectGame(GameKind.Baseball); };
             Controls.Add(fortress);
             Controls.Add(baseball);
             GameCard pet = new GameCard(false, true);
@@ -51,31 +51,26 @@ namespace TaskbarGames.Launcher
             Controls.Add(pet);
             GameCard runner = new GameCard(false, false, false, true);
             runner.Bounds = new Rectangle(31, 31, 24, 24);
-            runner.Click += delegate { OpenGame(delegate { return new RunnerGame(); }); };
+            runner.Click += delegate { SelectGame(GameKind.Runner); };
             Controls.Add(runner);
             hints.SetToolTip(runner, "공룡 러너 · SPACE로 점프 · 짧게 누르면 낮게 점프");
-            GameCard exit = new GameCard(false, false, true);
+            Button exit = new PixelMenuButton("EXIT");
+            exit.AccessibleName = "종료"; exit.AccessibleDescription = "프로그램 종료 (Esc)";
             exit.Name = "ExitButton";
             exit.Bounds = new Rectangle(3, 59, 52, 12);
             exit.Click += delegate { Close(); };
             Controls.Add(exit);
             hints.SetToolTip(exit, "종료 (Esc)");
-            hints.SetToolTip(pet, "다람쥐 · 클릭해서 쓰다듬기 · 우클릭으로 먹이 주기");
+            hints.SetToolTip(pet, "동물 친구 · 클릭해서 쓰다듬기 · 우클릭으로 먹이 주기와 동물 변경");
             hints.SetToolTip(fortress, "포트리스 · SPACE 길게 눌러 거리 조절");
-            hints.SetToolTip(baseball, "야구 · SPACE로 스윙");
+            hints.SetToolTip(baseball, "야구 · SPACE로 스윙 · 타자와 투수 우클릭으로 구단 유니폼 변경");
             ArcadeTheme.Style(menu);
             menu.Items.Add("모니터 선택", null, delegate {
                 Hide();
                 using (MonitorSelectionForm picker = new MonitorSelectionForm()) picker.ShowDialog();
                 Show(); Activate();
             });
-            menu.Items.Add("기록 / 저장 상태", null, delegate {
-                GameData records = GameEnvironment.Store.Data;
-                MessageBox.Show(this, String.Format("공룡 러너 · 최고 {0}점\n야구 · 최고 {1}m · 누적 {2}점 · {3}/{4} 안타\n포트리스 · {5}/{6} 명중 · 최고 {7}콤보\n\n{8}",
-                    records.RunnerBest, records.BaseballBestDistance, records.BaseballScore, records.BaseballHits, records.BaseballAttempts,
-                    records.FortressHits, records.FortressShots, records.FortressBestCombo,
-                    GameEnvironment.Store.Error.Length == 0 ? "기록과 설정을 자동 저장합니다." : GameEnvironment.Store.Error), "기록 / 저장 상태");
-            });
+            menu.Items.Add("기록실 / 칭호", null, delegate { using (RecordsForm records = new RecordsForm(GameKind.Fortress)) records.ShowDialog(this); });
             menu.Items.Add("종료 (Esc)", null, delegate { Close(); });
             ContextMenuStrip = fortress.ContextMenuStrip = baseball.ContextMenuStrip = pet.ContextMenuStrip = runner.ContextMenuStrip = menu;
             PositionAboveTaskbar();
@@ -107,6 +102,27 @@ namespace TaskbarGames.Launcher
 
         // 중복 호출과 종료 중 호출을 무시한다. 게임을 만든 뒤 닫힘 이벤트를 구독하고 런처를 숨긴다.
         // 표시 도중 예외가 나면 이벤트·참조·게임 자원을 정리하고 런처를 복원한 뒤 예외를 다시 전달한다.
+        bool selectingMode;
+        void SelectGame(GameKind kind)
+        {
+            if (selectingMode || activeGame != null || shuttingDown) return;
+            selectingMode = true; Hide();
+            try
+            {
+                using (ModeSelectionForm picker = new ModeSelectionForm(kind))
+                    if (picker.ShowDialog() == DialogResult.OK && !IsDisposed && !shuttingDown)
+                    {
+                        GameMode mode = picker.SelectedMode;
+                        OpenGame(delegate {
+                            if (kind == GameKind.Fortress) return new FortressGame(mode);
+                            if (kind == GameKind.Baseball) return new BaseballGame(mode);
+                            return new RunnerGame(mode);
+                        });
+                    }
+            }
+            finally { selectingMode = false; if (!IsDisposed && !shuttingDown && activeGame == null) { Show(); Activate(); } }
+        }
+
         internal void OpenGame(Func<Form> createGame)
         {
             if (shuttingDown || activeGame != null) return;
