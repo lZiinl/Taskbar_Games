@@ -18,7 +18,8 @@ namespace TaskbarGames.Games.Pet
         readonly System.Collections.ObjectModel.ReadOnlyCollection<Acorn> foodView;
         bool attendingCare;
         double cooldown;
-        double nextActivity = 15, walkRemaining;
+        // 실제 산책 시간을 2~4분 누적한 뒤 취미를 시작한다. 휴식 중에는 이 시간을 소비하지 않는다.
+        double nextActivity = 120, walkRemaining;
         public static bool IsLeisure(PetAction action)
         { return action == PetAction.Cola || action == PetAction.Popcorn || action == PetAction.Read || action == PetAction.WatchTV; }
         public const int MaxAcorns = 5;
@@ -110,7 +111,8 @@ namespace TaskbarGames.Games.Pet
                 {
                     walkRemaining = Remaining;
                     Action = (PetAction)((int)PetAction.Cola + random.Next(4));
-                    Remaining = Action == PetAction.Read || Action == PetAction.WatchTV ? 12 : 7;
+                    // 간식은 1~2분, 독서와 TV는 2~3분 유지하되 사용자 돌봄 입력은 즉시 받는다.
+                    Remaining = (Action == PetAction.Read || Action == PetAction.WatchTV ? 120 : 60) + random.Next(61);
                     return;
                 }
                 X += Direction * 26 * dt;
@@ -126,8 +128,8 @@ namespace TaskbarGames.Games.Pet
         }
         void ResumeWalk()
         {
-            Action = PetAction.Walk; Remaining = Math.Max(10, walkRemaining);
-            nextActivity = 12 + random.Next(17);
+            Action = PetAction.Walk; Remaining = Math.Max(120, walkRemaining);
+            nextActivity = 120 + random.Next(121);
         }
     }
 }

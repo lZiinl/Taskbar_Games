@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Drawing;
 using System.IO;
 using System.Reflection;
@@ -21,11 +21,12 @@ public static class SharedRegressionTests
             ?? value.GetType().GetMethod(name, Private);
         method.Invoke(value, args);
     }
-    public static void Run(string artifacts)
+    public static void Run(string artifacts, bool includeUI = true)
     {
         string directory = Path.Combine(artifacts, "storage-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
         Storage(directory);
+        if (!includeUI) { Console.WriteLine("PASS: profile storage, migration and recovery."); return; }
         GameStore originalStore = GameEnvironment.Store;
         DisplaySelection originalDisplay = GameEnvironment.Display;
         try

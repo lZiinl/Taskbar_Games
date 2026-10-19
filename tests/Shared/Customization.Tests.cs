@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
@@ -14,13 +14,56 @@ public static class CustomizationRegressionTests
     static void Assert(bool condition, string message) { if (!condition) throw new Exception(message); }
     static object Field(object target, string name) { return target.GetType().GetField(name, Private).GetValue(target); }
     static object Call(object target, string name, params object[] args) { return target.GetType().GetMethod(name, Private).Invoke(target, args); }
-    public static void Run(string artifacts)
+    // Show/ShowDialog 없이 메뉴 레이아웃과 실제 버튼 그리기만 메모리에서 검사한다.
+    static void CheckAnimalIcons(string artifacts)
+    {
+        Type pickerType = typeof(PetGame).GetNestedType("AnimalPicker", BindingFlags.NonPublic);
+        Type buttonType = typeof(PetGame).GetNestedType("AnimalButton", BindingFlags.NonPublic);
+        using (ToolStripDropDown picker = (ToolStripDropDown)Activator.CreateInstance(pickerType, true))
+        using (Bitmap preview = new Bitmap(86, 70))
+        using (Graphics canvas = Graphics.FromImage(preview))
+        {
+            picker.AutoSize = false; picker.Padding = new Padding(3); picker.Size = new Size(86, 70);
+            foreach (PetAnimal animal in Enum.GetValues(typeof(PetAnimal)))
+            {
+                ToolStripButton item = (ToolStripButton)Activator.CreateInstance(buttonType, true);
+                item.Image = PetAppearance.Icon(animal); picker.Items.Add(item);
+            }
+            picker.PerformLayout(); canvas.Clear(Color.FromArgb(7, 11, 13));
+            for (int i = 0; i < picker.Items.Count; i++)
+            {
+                ToolStripItem item = picker.Items[i];
+                Assert(item.Bounds == new Rectangle(3 + i % 2 * 40, 3 + i / 2 * 32, 40, 32), "Animal cell moved.");
+                Assert(picker.ClientRectangle.Contains(item.Bounds), "Animal icon clipped by menu.");
+                for (int j = 0; j < i; j++) Assert(!item.Bounds.IntersectsWith(picker.Items[j].Bounds), "Animal icons overlap.");
+                using (Bitmap cell = new Bitmap(item.Width, item.Height))
+                using (Graphics g = Graphics.FromImage(cell))
+                {
+                    buttonType.GetMethod("OnPaint", Private).Invoke(item, new object[] { new PaintEventArgs(g, new Rectangle(Point.Empty, cell.Size)) });
+                    canvas.DrawImageUnscaled(cell, item.Bounds.Location);
+                }
+                item.Image.Dispose(); item.Image = null;
+            }
+            Assert(!picker.Visible, "Offscreen check displayed a menu.");
+            preview.Save(Path.Combine(artifacts, "animal-picker.png"));
+        }
+        using (Bitmap poses = new Bitmap(480, 200))
+        using (Graphics g = Graphics.FromImage(poses))
+        {
+            g.Clear(Color.FromArgb(30, 34, 39));
+            string[] states = { "idle", "walk", "sleep", "eat", "love", "jump" };
+            foreach (PetAnimal animal in Enum.GetValues(typeof(PetAnimal)))
+                for (int i = 0; i < states.Length; i++) PetAppearance.Draw(g, animal, i * 80 + 5, (int)animal * 50 + 10, true, states[i], 0.25, 1);
+            poses.Save(Path.Combine(artifacts, "animal-poses.png"));
+        }
+    }
+    public static void Run(string artifacts, bool includeUI = true)
     {
         // Random leisure must be reachable, finite and cosmetic; acorns still take priority.
         PetBehavior pet = new PetBehavior(new PetSession(), new Random(37), 300);
         HashSet<PetAction> seen = new HashSet<PetAction>();
         double previousX = pet.X; PetAction previous = pet.Action;
-        for (int i = 0; i < 40000; i++)
+        for (int i = 0; i < 160000; i++)
         {
             pet.Advance(0.1, -1920, 0);
             if (PetBehavior.IsLeisure(pet.Action))
@@ -41,8 +84,15 @@ public static class CustomizationRegressionTests
         for (int i = 0; i < 10000 && !PetBehavior.IsLeisure(timing.Action); i++) timing.Advance(0.1, 0, 1920);
         Assert(PetBehavior.IsLeisure(timing.Action), "Timed activity did not start.");
         double activityX = timing.X;
-        for (int i = 0; i < 130; i++) timing.Advance(0.1, 0, 1920);
+        PetAction activity = timing.Action;
+        double duration = timing.Remaining;
+        Assert(duration >= 60 && duration <= 180, "Leisure duration is not minute based.");
+        timing.Advance(30, 0, 1920);
+        Assert(timing.Action == activity && timing.X == activityX, "Leisure changed too early.");
+        for (int i = 0; i < (int)Math.Ceiling((duration - 30) * 10) + 2; i++) timing.Advance(0.1, 0, 1920);
         Assert(timing.Action == PetAction.Walk && timing.X != activityX, "Leisure did not return to walking.");
+        CheckAnimalIcons(artifacts);
+        if (!includeUI) { Console.WriteLine("PASS: pet leisure timing, food priority and offscreen icon layout."); return; }
         GameStore original = GameEnvironment.Store;
         string profile = Path.Combine(artifacts, "customization-profile-" + Guid.NewGuid().ToString("N") + ".xml");
         GameStore store = new GameStore(profile); store.Data.RunnerBest = 123;
@@ -95,7 +145,7 @@ public static class CustomizationRegressionTests
                     Assert(careMenu.Items[1].Text == foods[(int)animal] + " 놓기", "Food menu does not match the animal.");
                     Assert((PetAnimal)markerType.GetProperty("Animal").GetValue(marker, null) == animal && behavior.Food.Count == 1, "Changing animals failed to update placed food without losing it.");
                 }
-                Assert(((ContextMenuStrip)Field(game, "animalMenu")).Items.Count == 4, "Animal menu is incomplete.");
+                Assert(((ToolStripDropDown)Field(game, "animalMenu")).Items.Count == 4, "Animal menu is incomplete.");
             }
             GameStore loaded = new GameStore(profile); loaded.Load();
             Assert(loaded.Data.BatterTeam == "lg" && loaded.Data.PitcherTeam == "lotte" && loaded.Data.PetAnimal == "panda", "Appearance choices were not saved.");

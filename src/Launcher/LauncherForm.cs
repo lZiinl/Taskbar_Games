@@ -53,7 +53,7 @@ namespace TaskbarGames.Launcher
             runner.Bounds = new Rectangle(31, 31, 24, 24);
             runner.Click += delegate { SelectGame(GameKind.Runner); };
             Controls.Add(runner);
-            hints.SetToolTip(runner, "공룡 러너 · SPACE로 점프 · 짧게 누르면 낮게 점프");
+            hints.SetToolTip(runner, "공룡 러너");
             Button exit = new PixelMenuButton("EXIT");
             exit.AccessibleName = "종료"; exit.AccessibleDescription = "프로그램 종료 (Esc)";
             exit.Name = "ExitButton";
@@ -61,9 +61,9 @@ namespace TaskbarGames.Launcher
             exit.Click += delegate { Close(); };
             Controls.Add(exit);
             hints.SetToolTip(exit, "종료 (Esc)");
-            hints.SetToolTip(pet, "동물 친구 · 클릭해서 쓰다듬기 · 우클릭으로 먹이 주기와 동물 변경");
-            hints.SetToolTip(fortress, "포트리스 · SPACE 길게 눌러 거리 조절");
-            hints.SetToolTip(baseball, "야구 · SPACE로 스윙 · 타자와 투수 우클릭으로 구단 유니폼 변경");
+            hints.SetToolTip(pet, "동물 친구");
+            hints.SetToolTip(fortress, "포트리스");
+            hints.SetToolTip(baseball, "야구");
             ArcadeTheme.Style(menu);
             menu.Items.Add("모니터 선택", null, delegate {
                 Hide();

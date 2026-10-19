@@ -15,7 +15,7 @@ public static class RunnerRegressionTests
     static void Assert(bool condition, string message) { if (!condition) throw new Exception(message); }
     // 비활성 점프 차단, 이중 점프 차단, 키를 뗀 시점별 높이, 충돌/재시작/최고 점수를 검증한다.
     // 마지막에는 실제 폼의 OnPaint를 호출해 흑백 러너 미리보기를 저장한다.
-    public static void Run(string artifacts)
+    public static void Run(string artifacts, bool includeUI = true)
     {
         RunnerSession paused = new RunnerSession(new Random(1));
         Assert(!paused.Jump(), "Inactive runner must ignore jumps.");
@@ -65,6 +65,7 @@ public static class RunnerRegressionTests
             int best = game.Best;
             Assert(game.Jump() && game.Score == 0 && game.Best == best && game.Obstacles.Count == 0, "Restart should clear course but keep best.");
         }
+        if (!includeUI) { Console.WriteLine("PASS: runner physics, speed, gaps and collision logic."); return; }
         const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
         using (RunnerGame form = new RunnerGame())
         {

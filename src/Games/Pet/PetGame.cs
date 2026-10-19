@@ -15,7 +15,7 @@ namespace TaskbarGames.Games.Pet
         readonly Timer timer = new Timer();
         readonly Stopwatch clock = Stopwatch.StartNew();
         readonly ToolStripDropDown menu = new ToolStripDropDown();
-        readonly ContextMenuStrip animalMenu = new ContextMenuStrip();
+        readonly ToolStripDropDown animalMenu = new AnimalPicker();
         PetAnimal animal;
         readonly ToolStripButton status = new ToolStripButton();
         readonly ArcadeHints hint = new ArcadeHints();
@@ -57,13 +57,16 @@ namespace TaskbarGames.Games.Pet
                 item.ToolTipText = item.AccessibleName = item.Text;
             }
             hint.AttachMenu(this, menu);
-            ArcadeTheme.Style(animalMenu); animalMenu.ImageScalingSize = new Size(36, 30);
-            animalMenu.ShowImageMargin = true; animalMenu.ShowCheckMargin = true;
+            ArcadeTheme.Style(animalMenu);
+            animalMenu.AutoSize = false; animalMenu.Padding = new Padding(3);
+            animalMenu.Size = new Size(86, 70);
             foreach (PetAnimal candidate in Enum.GetValues(typeof(PetAnimal)))
             {
                 PetAnimal choice = candidate;
-                ToolStripMenuItem item = new ToolStripMenuItem(PetAppearance.Name(choice), PetAppearance.Icon(choice), delegate { SelectAnimal(choice); });
-                item.Tag = choice; item.ToolTipText = PetAppearance.Name(choice) + "로 변경 · 포만감과 기분은 이어집니다";
+                AnimalButton item = new AnimalButton();
+                item.Image = PetAppearance.Icon(choice); item.Tag = choice;
+                item.AccessibleName = item.ToolTipText = PetAppearance.Name(choice);
+                item.Click += delegate { SelectAnimal(choice); animalMenu.Close(); };
                 animalMenu.Items.Add(item);
             }
             hint.AttachMenu(this, animalMenu);
@@ -91,8 +94,51 @@ namespace TaskbarGames.Games.Pet
         void ShowAnimalMenu()
         {
             if (IsDisposed) return;
-            foreach (ToolStripMenuItem item in animalMenu.Items) item.Checked = (PetAnimal)item.Tag == animal;
+            foreach (ToolStripButton item in animalMenu.Items) item.Checked = (PetAnimal)item.Tag == animal;
             animalMenu.Show(this, new Point(0, 0), ToolStripDropDownDirection.AboveRight);
+        }
+        // OS의 메뉴 이미지 여백이나 자동 표 배치 대신 네 셀의 좌표를 고정한다.
+        // 각 버튼은 자기 영역에만 그려 옆 아이콘을 침범하지 않는다.
+        sealed class AnimalPicker : ToolStripDropDown
+        {
+            public AnimalPicker()
+            {
+                LayoutStyle = ToolStripLayoutStyle.Table;
+                TableLayoutSettings grid = (TableLayoutSettings)LayoutSettings;
+                grid.ColumnCount = grid.RowCount = 2; grid.GrowStyle = TableLayoutPanelGrowStyle.FixedSize;
+                for (int i = 0; i < 2; i++)
+                {
+                    grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 40));
+                    grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 32));
+                }
+            }
+            protected override void OnLayout(LayoutEventArgs e)
+            {
+                base.OnLayout(e);
+                for (int i = 0; i < Items.Count; i++)
+                    ((AnimalButton)Items[i]).Place(new Rectangle(3 + i % 2 * 40, 3 + i / 2 * 32, 40, 32));
+            }
+        }
+        sealed class AnimalButton : ToolStripButton
+        {
+            public AnimalButton()
+            {
+                AutoSize = false; Size = new Size(40, 32); Margin = Padding.Empty; Padding = Padding.Empty;
+                DisplayStyle = ToolStripItemDisplayStyle.Image; ImageScaling = ToolStripItemImageScaling.None;
+                Overflow = ToolStripItemOverflow.Never;
+            }
+            public void Place(Rectangle bounds) { SetBounds(bounds); }
+            protected override void OnPaint(PaintEventArgs e)
+            {
+                System.Drawing.Drawing2D.GraphicsState state = e.Graphics.Save();
+                e.Graphics.SetClip(new Rectangle(0, 0, Width, Height));
+                e.Graphics.Clear(Selected ? ArcadeTheme.Panel : ArcadeTheme.Black);
+                if (Image != null) e.Graphics.DrawImageUnscaled(Image, (Width - Image.Width) / 2, (Height - Image.Height) / 2);
+                if (Checked || Selected)
+                    using (Pen pen = new Pen(Checked ? ArcadeTheme.Neon : ArcadeTheme.Cyan))
+                        e.Graphics.DrawRectangle(pen, 0, 0, Width - 1, Height - 1);
+                e.Graphics.Restore(state);
+            }
         }
         void SelectAnimal(PetAnimal choice)
         {

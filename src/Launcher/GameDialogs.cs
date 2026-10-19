@@ -16,11 +16,11 @@ namespace TaskbarGames.Launcher
             MinimumSize = MaximumSize = ClientSize = GameEnvironment.SelectionSize;
             BackColor = ArcadeTheme.Black; TopMost = true; StartPosition = FormStartPosition.Manual;
             Location = GameEnvironment.SelectionLocation(Size); DoubleBuffered = true;
-            Add("CHAL", "도전 모드", game == GameKind.Runner ? "최고 속도 560px/s에서 120초 생존" : game == GameKind.Baseball ? "10구 총점 도전 · 한 판 기준 칭호 획득" : "10발 총점 도전 · 멀리 맞힐수록 높은 점수", 3, 20,
+            Add("CHAL", "도전 모드", game == GameKind.Runner ? "최고 속도 120초 도전" : game == GameKind.Baseball ? "10구 총점 도전" : "10발 총점 도전", 3, 20,
                 delegate { SelectedMode = GameMode.Challenge; DialogResult = DialogResult.OK; Close(); });
-            Add("PRACT", "연습 모드", "횟수 제한 없이 연습 · 도전 칭호는 획득하지 않음", 26, 18,
+            Add("PRACT", "연습 모드", "연습모드", 26, 18,
                 delegate { SelectedMode = GameMode.Practice; DialogResult = DialogResult.OK; Close(); });
-            Add("RECORD", "기록과 칭호", "모드별 기록 확인 · 획득한 칭호 장착", 47, 10,
+            Add("RECORD", "기록과 칭호", "기록실", 47, 10,
                 delegate { using (RecordsForm records = new RecordsForm(game)) records.ShowDialog(this); });
             Add("BACK", "게임 선택으로 돌아가기", "돌아가기 (Esc)", 59, 12,
                 delegate { DialogResult = DialogResult.Cancel; Close(); });

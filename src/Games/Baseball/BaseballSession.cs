@@ -138,7 +138,7 @@ namespace TaskbarGames.Games.Baseball
             };
         }
 
-        // 포커스 상실 시 진행 중인 투구와 예약 스윙은 버린다.
+        // 연습은 포커스 상실 시 투구를 새로 준비하지만 도전은 예약 스윙까지 그대로 보존한다.
         // 이미 타격한 공의 비행/결과는 유지하고 Advance가 비활성 시간을 반영하지 않게 한다.
         public void SetActive(bool active)
         {
@@ -146,7 +146,7 @@ namespace TaskbarGames.Games.Baseball
             Active = active;
             // Discard an unfinished pitch and queued swing when focus is lost.
             // An already-hit ball and its score animation can resume safely.
-            if (!active)
+            if (!active && Mode == GameMode.Practice)
             {
                 SwingAge = -1;
                 if (Phase == BaseballPhase.Ready || Phase == BaseballPhase.Pitch) ResetRound();

@@ -12,7 +12,7 @@ public static class PetRegressionTests
     static void Assert(bool value, string message) { if (!value) throw new Exception(message); }
     static void Advance(PetBehavior pet, double seconds)
     { for (int i = 0; i < (int)Math.Round(seconds * 10); i++) pet.Advance(0.1, 0, 1920); }
-    public static void Run(string artifacts)
+    public static void Run(string artifacts, bool includeUI = true)
     {
         PetSession stats = new PetSession(); stats.Advance(300);
         Assert(Math.Abs(stats.Fullness - 65) < 0.001, "Hunger decay is not time based.");
@@ -60,6 +60,7 @@ public static class PetRegressionTests
         edge.AddFood(1900, 0, 1920); edge.SetBounds(-1280, 0);
         foreach (Acorn food in edge.Food) Assert(food.X >= -1242 && food.X <= -38, "Food not clamped after display change.");
 
+        if (!includeUI) { Console.WriteLine("PASS: pet care, food seeking, bounds and jump logic."); return; }
         const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
         using (PetGame pet = (PetGame)Activator.CreateInstance(typeof(PetGame), flags, null, new object[] { false }, null))
         {

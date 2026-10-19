@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Drawing;
 
 namespace TaskbarGames.Games.Pet
@@ -26,60 +26,97 @@ namespace TaskbarGames.Games.Pet
             g.TranslateTransform(left + (right ? 0 : 32 * scale), top);
             g.ScaleTransform(right ? scale : -scale, scale);
             int frame = (int)(time * 4) % 2;
+            // 종마다 별도 실루엣을 사용한다. 모든 몸체는 34×28 안에 들어가며
+            // 먹이·취미 소품은 기존 공통 좌표를 사용해 동작 연결을 유지한다.
             if (animal != PetAnimal.Squirrel)
             {
-                bool panda = animal == PetAnimal.Panda, cat = animal == PetAnimal.Cat, sleeping = pose == "sleep";
-                Color fur = panda ? Color.FromArgb(245, 243, 231) : cat ? Color.FromArgb(183, 192, 205) : Color.FromArgb(214, 158, 98);
-                Color dark = panda ? Ink : cat ? Color.FromArgb(96, 108, 132) : Color.FromArgb(126, 78, 50);
                 if (pose == "walk") g.TranslateTransform(0, frame);
-                // 꼬리·귀·눈 무늬로 작은 크기에서도 종을 구분한다.
-                if (!panda)
+                bool sleeping = pose == "sleep", closed = pose == "love" || time % 4.8 > 4.6;
+                if (animal == PetAnimal.Dog) DrawDog(g, sleeping, closed, frame, pose);
+                else if (animal == PetAnimal.Cat) DrawCat(g, sleeping, closed, frame, pose);
+                else DrawPanda(g, sleeping, closed, frame, pose);
+                if (pose == "eat")
                 {
-                    Box(g, dark, 3, 14 - frame, 4, 10); Box(g, fur, 5, 20, 10, 4);
-                    if (cat) { Box(g, dark, 3, 10 - frame, 7, 4); Box(g, dark, 8, 8 - frame, 3, 5); }
-                }
-                Round(g, Ink, 10, 16, 19, 12); Round(g, fur, 11, 17, 17, 10);
-                Round(g, panda ? Ink : Cream, 16, 20, 10, 7);
-                int step = pose == "walk" ? frame * 2 : 0;
-                Box(g, dark, 11 - step, 26, 7, 2); Box(g, dark, 23 + step, 26, 7, 2);
-                if (sleeping)
-                {
-                    Round(g, Ink, 18, 16, 14, 11); Round(g, fur, 19, 17, 12, 9);
-                    Round(g, dark, 18, 15, 5, 5); Box(g, Ink, 25, 21, 4, 1);
-                }
-                else
-                {
-                    if (cat)
-                    {
-                        Box(g, dark, 12, 2, 3, 8); Box(g, dark, 15, 4, 4, 6);
-                        Box(g, dark, 27, 2, 3, 8); Box(g, dark, 24, 4, 4, 6);
-                        Box(g, Pink, 14, 5, 2, 4); Box(g, Pink, 27, 5, 2, 4);
-                    }
-                    else
-                    {
-                        Round(g, dark, 11, 3, 8, panda ? 8 : 14);
-                        Round(g, dark, 26, 3, 7, panda ? 8 : 14);
-                    }
-                    Round(g, Ink, 11, 7, 22, 17); Round(g, fur, 12, 8, 20, 15);
-                    if (panda) { Round(g, dark, 14, 11, 7, 8); Round(g, dark, 25, 11, 7, 8); }
-                    if (cat) { Box(g, dark, 20, 8, 2, 4); Box(g, dark, 24, 8, 2, 3); }
-                    bool closed = pose == "love" || time % 4.8 > 4.6;
-                    Color eye = panda ? Color.WhiteSmoke : Ink;
-                    Box(g, eye, 16, closed ? 14 : 12, 3, closed ? 1 : 4);
-                    Box(g, eye, 27, closed ? 14 : 12, 3, closed ? 1 : 4);
-                    Round(g, Cream, 19, 17, 12, 6); Box(g, Ink, 23, 17, 3, 2); Box(g, Ink, 24, 19, 1, 2);
-                    Box(g, Pink, 14, 18, 3, 1);
-                    if (cat) { Box(g, Ink, 11, 18, 6, 1); Box(g, Ink, 29, 18, 5, 1); }
-                    if (pose == "eat")
-                    {
-                        PetFood.Draw(g, animal, 20, 17 + frame);
-                        Box(g, Cream, 18, 23 + frame, 3, 2); Box(g, Cream, 31, 22 + frame, 2, 2);
-                    }
-                    else { Box(g, fur, 15, 22, 3, 2); Box(g, fur, 27, 22, 3, 2); }
+                    PetFood.Draw(g, animal, 20, 17 + frame);
+                    Box(g, Cream, 18, 23 + frame, 3, 2);
+                    Box(g, Cream, 30, 22 + frame, 3, 2);
                 }
             }
             DrawActivity(g, pose, time);
             g.Restore(state);
+        }
+        // 강아지: 낮고 긴 몸, 축 처진 귀와 튀어나온 주둥이, 짧은 꼬리.
+        static void DrawDog(Graphics g, bool sleep, bool closed, int frame, string pose)
+        {
+            Color fur = Color.FromArgb(222, 169, 102), ear = Color.FromArgb(125, 75, 46);
+            Box(g, ear, 2, 14 - frame, 4, 7); Box(g, fur, 4, 16, 5, 5);
+            Round(g, Ink, 5, 16, 24, 11); Round(g, fur, 6, 17, 22, 9);
+            Box(g, Cream, 9, 21, 17, 5);
+            int step = pose == "walk" ? frame : 0;
+            Box(g, ear, 7 + step, 25, 5, 3); Box(g, ear, 24 - step, 25, 5, 3);
+            if (sleep)
+            {
+                Round(g, ear, 16, 17, 10, 10); Round(g, fur, 23, 19, 10, 8);
+                Box(g, Ink, 27, 22, 3, 1); Box(g, Ink, 31, 24, 3, 2); return;
+            }
+            Round(g, Ink, 15, 6, 17, 17); Round(g, fur, 16, 7, 15, 15);
+            Round(g, ear, 12, 7, 7, 15); Round(g, ear, 28, 7, 6, 11);
+            Box(g, Cream, 21, 7, 3, 9);
+            Eye(g, 19, 12, closed, Ink); Eye(g, 27, 12, closed, Ink);
+            Round(g, Cream, 21, 17, 13, 7); Box(g, Ink, 29, 17, 4, 3);
+            if (pose == "love" || pose == "idle") Box(g, Pink, 27, 22, 3, 3);
+            Box(g, Color.FromArgb(80, 151, 170), 17, 23, 12, 2);
+        }
+        // 고양이: 가느다란 몸, 높은 삼각 귀, 길게 말린 꼬리와 흰 양말.
+        static void DrawCat(Graphics g, bool sleep, bool closed, int frame, string pose)
+        {
+            Color fur = Color.FromArgb(166, 178, 201), stripe = Color.FromArgb(77, 88, 120);
+            Box(g, stripe, 2, 7 - frame, 3, 17); Box(g, stripe, 4, 5 - frame, 5, 3);
+            Box(g, fur, 3, 10, 1, 11); Box(g, stripe, 4, 22, 9, 4);
+            Round(g, Ink, 10, 17, 19, 10); Round(g, fur, 11, 18, 17, 8);
+            Box(g, stripe, 12, 18, 3, 5); Box(g, stripe, 17, 18, 2, 3);
+            int step = pose == "walk" ? frame : 0;
+            Box(g, Cream, 12 + step, 25, 4, 3); Box(g, Cream, 25 - step, 25, 4, 3);
+            if (sleep)
+            {
+                Round(g, fur, 18, 18, 15, 9); Box(g, stripe, 19, 15, 4, 6);
+                Box(g, Ink, 26, 22, 4, 1); Box(g, Pink, 31, 24, 2, 1);
+                Box(g, stripe, 7, 24, 16, 3); return;
+            }
+            Box(g, Ink, 13, 1, 2, 10); Box(g, Ink, 15, 3, 3, 8); Box(g, Ink, 18, 6, 3, 5);
+            Box(g, Ink, 29, 1, 2, 10); Box(g, Ink, 26, 3, 3, 8); Box(g, Ink, 23, 6, 3, 5);
+            Box(g, Pink, 15, 5, 2, 5); Box(g, Pink, 27, 5, 2, 5);
+            Round(g, Ink, 12, 9, 21, 13); Round(g, fur, 13, 10, 19, 11);
+            Box(g, stripe, 20, 10, 2, 4); Box(g, stripe, 24, 10, 2, 3);
+            Eye(g, 16, 14, closed, Color.FromArgb(53, 93, 60)); Eye(g, 27, 14, closed, Color.FromArgb(53, 93, 60));
+            Box(g, Cream, 20, 18, 8, 3); Box(g, Pink, 23, 17, 2, 2);
+            Box(g, Ink, 10, 18, 6, 1); Box(g, Ink, 29, 18, 5, 1);
+            Box(g, Ink, 11, 20, 4, 1); Box(g, Ink, 30, 20, 4, 1);
+        }
+        // 판다: 넓고 둥근 정면 몸통, 둥근 귀, 검은 눈 무늬와 큰 발.
+        static void DrawPanda(Graphics g, bool sleep, bool closed, int frame, string pose)
+        {
+            Color white = Color.FromArgb(244, 244, 230);
+            Round(g, Ink, 7, 14, 25, 14); Round(g, white, 11, 16, 17, 11);
+            Round(g, Ink, 6, 17, 6, 9); Round(g, Ink, 28, 17, 6, 9);
+            int step = pose == "walk" ? frame : 0;
+            Round(g, Ink, 8 + step, 23, 9, 5); Round(g, Ink, 24 - step, 23, 9, 5);
+            if (sleep)
+            {
+                Round(g, Ink, 10, 14, 7, 7); Round(g, white, 13, 17, 19, 9);
+                Round(g, Ink, 22, 19, 7, 5); Box(g, white, 24, 21, 3, 1);
+                Box(g, Ink, 30, 24, 3, 2); return;
+            }
+            Round(g, Ink, 6, 2, 9, 9); Round(g, Ink, 25, 2, 9, 9);
+            Round(g, Ink, 7, 6, 27, 17); Round(g, white, 8, 7, 25, 15);
+            Round(g, Ink, 11, 10, 8, 8); Round(g, Ink, 24, 10, 8, 8);
+            Eye(g, 14, 12, closed, white); Eye(g, 26, 12, closed, white);
+            Box(g, Ink, 20, 17, 4, 2); Box(g, Ink, 21, 19, 2, 2);
+            Box(g, Pink, 10, 19, 4, 1); Box(g, Pink, 28, 19, 4, 1);
+        }
+        static void Eye(Graphics g, int x, int y, bool closed, Color color)
+        {
+            Box(g, color, x, closed ? y + 2 : y, 2, closed ? 1 : 4);
         }
         static void DrawActivity(Graphics g, string pose, double time)
         {

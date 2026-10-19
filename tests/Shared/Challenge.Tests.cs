@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Drawing;
 using System.IO;
 using System.Reflection;
@@ -40,8 +40,28 @@ public static class ChallengeRegressionTests
         for (int i = 0; game.Phase == BaseballPhase.Flight && i < 1000; i++) game.Advance(dt);
         Assert(game.Attempts == oldAttempts + 1, "Landing was not counted exactly once.");
     }
-    public static void Run(string artifacts)
+    public static void Run(string artifacts, bool includeUI = true)
     {
+        // 도전에서 창 전환으로 헛스윙을 취소하거나 예약된 정타를 잃지 않아야 한다.
+        foreach (bool perfect in new[] { false, true })
+        {
+            BaseballSession paused = new BaseballSession(new Random(1), GameMode.Challenge);
+            paused.SetActive(true); paused.Advance(BaseballSession.ReadySeconds);
+            if (perfect) paused.Advance(paused.PitchSeconds - BaseballSession.SwingContactDelay);
+            paused.Swing();
+            if (!perfect) paused.Advance(0.1); // 이미 EARLY로 판정된 헛스윙도 유지한다.
+            double elapsed = paused.Elapsed, swingAge = paused.SwingAge;
+            for (int repeat = 0; repeat < 3; repeat++)
+            {
+                paused.SetActive(false); paused.Advance(60);
+                Assert(paused.Phase == BaseballPhase.Pitch && paused.Elapsed == elapsed && paused.SwingAge == swingAge,
+                    "Challenge focus loss discarded or advanced the pitch/swing.");
+                paused.SetActive(true);
+                Assert(!paused.Swing(), "Focus return allowed a second swing.");
+            }
+            for (int i = 0; paused.Attempts == 0 && i < 1000; i++) paused.Advance(0.01);
+            Assert(paused.Attempts == 1 && paused.Hits == (perfect ? 1 : 0), "Resumed pitch did not score exactly once.");
+        }
         FortressSession fortress = new FortressSession(new FarRandom(), GameMode.Challenge);
         fortress.ResetLayout(1800, 600, new PointF(87, 571), 300);
         int events = 0; fortress.ShotFinished += delegate { events++; };
@@ -90,7 +110,9 @@ public static class ChallengeRegressionTests
             if (height > 21 && height <= BaseballSession.FenceHeight + BaseballSession.BallRadius) { Assert(BaseballSession.EvaluateTiming(error).HitFence, "Raised fence did not block a formerly clear hit."); newlyBlocked = true; }
         }
         Assert(newlyBlocked && BaseballSession.EvaluateTiming(0).HomeRun, "Fence makes all or no home runs possible.");
-        Runner(); Rewards(artifacts); Timestamps(artifacts); Dialogs(artifacts); CommonHints(artifacts);
+        Runner(); Rewards(artifacts); Timestamps(artifacts);
+        if (!includeUI) { Console.WriteLine("PASS: challenge rules, rewards and persistence."); return; }
+        Dialogs(artifacts); CommonHints(artifacts);
         Console.WriteLine("PASS: 10-shot/10-pitch modes, distance scoring, 90-160km/h, raised fence, 120s maximum-speed survival, per-run titles, persistence and mode/result/records UI.");
     }
     static void Runner()

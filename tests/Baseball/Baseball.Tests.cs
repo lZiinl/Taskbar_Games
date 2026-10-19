@@ -42,7 +42,7 @@ public static class BaseballRegressionTests
     }
 
     // 투구 범위·타이밍 등급·점수·키 반복·포커스 취소·비행 일시 정지와 펜스 결과를 순서대로 확인한다.
-    public static void Run(string artifacts)
+    public static void Run(string artifacts, bool includeUI = true)
     {
         BattingResult perfect = BaseballSession.EvaluateTiming(0);
         Assert(perfect.Hit && perfect.Distance == 160 && perfect.Points == 1600 && perfect.Grade == "PERFECT", "Perfect hit scoring failed.");
@@ -107,6 +107,7 @@ public static class BaseballRegressionTests
         Assert(flight.Score == flight.LastHit.Points && flight.Score > 0, "Paused flight did not resume.");
         Console.WriteLine("PASS: random pitch bounds; timing-distance scoring at 30/60/144 FPS; misses, one swing per pitch, focus cancellation and flight resume.");
 
+        if (!includeUI) return;
         RenderAndCheckWindow(artifacts);
         RenderSwingPoses(artifacts);
         RenderPitcherPoses(artifacts);
