@@ -3,7 +3,8 @@ using System.Collections.Generic;
 
 namespace TaskbarGames.Games.Pet
 {
-    public enum PetAction { Idle, Walk, Sleep, Love, Eat, Cola, Popcorn, Read, WatchTV }
+    public enum PetAction { Idle, Walk, Sleep, Love, Eat, Cola, Popcorn, Read, WatchTV,
+        Dig, GroomTail, Wag, PlayBall, Wash, Loaf, Bamboo, BellyPat }
     public sealed class Acorn
     {
         public double X { get; internal set; }
@@ -21,7 +22,18 @@ namespace TaskbarGames.Games.Pet
         // 실제 산책 시간을 2~4분 누적한 뒤 취미를 시작한다. 휴식 중에는 이 시간을 소비하지 않는다.
         double nextActivity = 120, walkRemaining;
         public static bool IsLeisure(PetAction action)
-        { return action == PetAction.Cola || action == PetAction.Popcorn || action == PetAction.Read || action == PetAction.WatchTV; }
+        { return action >= PetAction.Cola && action <= PetAction.BellyPat; }
+        public PetAnimal Animal { get; private set; }
+        // 외형 변경 중 이전 동물 전용 동작이 남지 않도록 취미만 산책으로 전환한다.
+        // 먹기·돌봄·수면·바닥 먹이와 점프 상태는 그대로 보존한다.
+        public void SetAnimal(PetAnimal animal)
+        {
+            if (Animal == animal) return;
+            Animal = animal;
+            if (IsLeisure(Action)) ResumeWalk();
+        }
+        public static PetAction SignatureAction(PetAnimal animal, int index)
+        { return (PetAction)((int)PetAction.Dig + (int)animal * 2 + index); }
         public const int MaxAcorns = 5;
         public PetSession Stats { get; private set; }
         public PetAction Action { get; private set; }
@@ -110,7 +122,9 @@ namespace TaskbarGames.Games.Pet
                 if (JumpAge < 0 && nextActivity <= 0 && Remaining > 0)
                 {
                     walkRemaining = Remaining;
-                    Action = (PetAction)((int)PetAction.Cola + random.Next(4));
+                    // 공통 취미와 전용 행동을 절반씩 섞어 종별 성격을 자주 볼 수 있게 한다.
+                    Action = random.Next(2) == 0 ? (PetAction)((int)PetAction.Cola + random.Next(4))
+                        : SignatureAction(Animal, random.Next(2));
                     // 간식은 1~2분, 독서와 TV는 2~3분 유지하되 사용자 돌봄 입력은 즉시 받는다.
                     Remaining = (Action == PetAction.Read || Action == PetAction.WatchTV ? 120 : 60) + random.Next(61);
                     return;

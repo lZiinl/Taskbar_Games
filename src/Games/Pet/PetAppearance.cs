@@ -21,7 +21,8 @@ namespace TaskbarGames.Games.Pet
         static readonly Color Ink = Color.FromArgb(48, 39, 43), Cream = Color.FromArgb(255, 239, 209), Pink = Color.FromArgb(244, 153, 166);
         public static void Draw(Graphics g, PetAnimal animal, int left, int top, bool right, string pose, double time, int scale)
         {
-            if (animal == PetAnimal.Squirrel) PetGame.DrawSquirrel(g, left, top, right, pose, time, scale);
+            if (animal == PetAnimal.Squirrel) PetGame.DrawSquirrel(g, left, top, right,
+                pose == "groomtail" ? "sleep" : pose, time, scale);
             System.Drawing.Drawing2D.GraphicsState state = g.Save();
             g.TranslateTransform(left + (right ? 0 : 32 * scale), top);
             g.ScaleTransform(right ? scale : -scale, scale);
@@ -42,6 +43,7 @@ namespace TaskbarGames.Games.Pet
                     Box(g, Cream, 30, 22 + frame, 3, 2);
                 }
             }
+            DrawSignature(g, pose, time);
             DrawActivity(g, pose, time);
             g.Restore(state);
         }
@@ -71,6 +73,16 @@ namespace TaskbarGames.Games.Pet
         static void DrawCat(Graphics g, bool sleep, bool closed, int frame, string pose)
         {
             Color fur = Color.FromArgb(166, 178, 201), stripe = Color.FromArgb(77, 88, 120);
+            // 식빵 자세는 발을 감춘 낮고 넓은 몸과 감긴 눈으로 구분한다.
+            if (pose == "loaf")
+            {
+                Round(g, Ink, 5, 17, 28, 11); Round(g, fur, 6, 18, 26, 9);
+                Box(g, stripe, 7, 24, 14, 3);
+                Box(g, stripe, 17, 10, 4, 9); Box(g, stripe, 28, 10, 4, 9);
+                Round(g, fur, 16, 16, 17, 9);
+                Box(g, Ink, 19, 20, 3, 1); Box(g, Ink, 28, 20, 3, 1);
+                Box(g, Pink, 25, 22, 2, 1); return;
+            }
             Box(g, stripe, 2, 7 - frame, 3, 17); Box(g, stripe, 4, 5 - frame, 5, 3);
             Box(g, fur, 3, 10, 1, 11); Box(g, stripe, 4, 22, 9, 4);
             Round(g, Ink, 10, 17, 19, 10); Round(g, fur, 11, 18, 17, 8);
@@ -117,6 +129,60 @@ namespace TaskbarGames.Games.Pet
         static void Eye(Graphics g, int x, int y, bool closed, Color color)
         {
             Box(g, color, x, closed ? y + 2 : y, 2, closed ? 1 : 4);
+        }
+        // 작은 소품과 앞발의 두 프레임만 움직인다. 전용 동작도 창 크기를 늘리지 않는다.
+        // 모든 좌표는 기존 76×56 창의 로컬 여백 안이며 좌우 반전도 상위 변환을 따른다.
+        static void DrawSignature(Graphics g, string pose, double time)
+        {
+            int frame = (int)(time * 2) % 2;
+            Color brown = Color.FromArgb(150, 98, 62), green = Color.FromArgb(111, 159, 74);
+            if (pose == "dig")
+            {
+                Box(g, brown, 27, 26, 15, 2); Box(g, Ink, 31, 26, 7, 1);
+                Box(g, Cream, 27 + frame * 3, 22 + frame * 2, 5, 3);
+                Box(g, brown, 36 + frame * 3, 22 - frame * 2, 2, 2);
+                Box(g, brown, 42 - frame * 2, 24 - frame, 2, 1);
+            }
+            else if (pose == "groomtail")
+            {
+                Box(g, Cream, 12 + frame * 3, 19 - frame, 5, 3);
+                Box(g, brown, 13 + frame * 3, 22 - frame, 3, 1);
+            }
+            else if (pose == "wag")
+            {
+                // 두 방향으로 흔드는 꼬리와 작은 하트로 반가운 자세를 표현한다.
+                Box(g, brown, frame == 0 ? 0 : 4, 10, 3, 10);
+                Box(g, Cream, frame == 0 ? 0 : 4, 8, 3, 3);
+                Box(g, Pink, 36, 7 + frame, 2, 4); Box(g, Pink, 40, 7 + frame, 2, 4);
+                Box(g, Pink, 37, 10 + frame, 4, 3); Box(g, Pink, 38, 13 + frame, 2, 1);
+            }
+            else if (pose == "playball")
+            {
+                int x = 36 + frame * 5;
+                Round(g, Ink, x, 20, 8, 8); Round(g, Color.FromArgb(115, 173, 191), x + 1, 21, 6, 6);
+                Box(g, Cream, x + 2, 22, 2, 2);
+                Box(g, Cream, 29 + frame * 3, 24, 5, 3);
+            }
+            else if (pose == "wash")
+            {
+                Box(g, Ink, 16, 16, 3, 1); // 얼굴을 문지르는 앞발과 감긴 눈.
+                Box(g, Cream, 27, 13 + frame * 5, 5, 5);
+                Box(g, Pink, 28, 14 + frame * 5, 2, 2);
+            }
+            else if (pose == "bamboo")
+            {
+                Box(g, green, 29, 11, 3, 17);
+                for (int y = 14; y < 27; y += 5) Box(g, Cream, 29, y, 3, 1);
+                Box(g, green, 32, 12, 6, 2); Box(g, green, 34, 10, 4, 2);
+                Box(g, green, 24, 16, 5, 2); Box(g, Ink, 27, 20 + frame * 2, 6, 4);
+                Box(g, green, 23, 18 + frame, 5, 1);
+            }
+            else if (pose == "bellypat")
+            {
+                Round(g, Cream, 14, 20, 13, 7);
+                Box(g, Ink, 12 + frame * 3, 21, 5, 4);
+                Box(g, Ink, 25 - frame * 3, 23 - frame, 5, 4);
+            }
         }
         static void DrawActivity(Graphics g, string pose, double time)
         {

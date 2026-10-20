@@ -57,8 +57,54 @@ public static class CustomizationRegressionTests
             poses.Save(Path.Combine(artifacts, "animal-poses.png"));
         }
     }
+    static void CheckSignatureActions(string artifacts)
+    {
+        using (Bitmap preview = new Bitmap(240, 200))
+        using (Graphics g = Graphics.FromImage(preview))
+        {
+            g.Clear(Color.FromArgb(30, 34, 39));
+            foreach (PetAnimal animal in Enum.GetValues(typeof(PetAnimal)))
+            {
+                PetBehavior model = new PetBehavior(new PetSession(), new Random(37), 300);
+                model.SetAnimal(animal);
+                HashSet<PetAction> seen = new HashSet<PetAction>();
+                for (int i = 0; i < 200000; i++)
+                {
+                    model.Advance(0.1, 0, 1920);
+                    if (model.Action < PetAction.Dig) continue;
+                    Assert(model.Action == PetBehavior.SignatureAction(animal, 0) || model.Action == PetBehavior.SignatureAction(animal, 1),
+                        "Another animal's signature action was selected.");
+                    if (seen.Add(model.Action))
+                    {
+                        Assert(model.Remaining >= 60 && model.Remaining <= 120, "Signature duration changed.");
+                        double x = model.X; PetAction action = model.Action;
+                        model.Advance(30, 0, 1920);
+                        Assert(model.Action == action && model.X == x, "Signature action did not stay calm.");
+                    }
+                }
+                Assert(seen.Count == 2 && model.Stats.Meals == 0, "Missing signature action or cosmetic food changed meals.");
+                for (int i = 0; i < 30000 && model.Action < PetAction.Dig; i++) model.Advance(0.1, 0, 1920);
+                Assert(model.Action >= PetAction.Dig && model.Jump(), "Signature action blocked jump.");
+                model.Advance(0.6, 0, 1920);
+                model.AddFood(model.X + 38, 0, 1920); model.Advance(0.1, 0, 1920);
+                Assert(model.Stats.Meals == 1, "Signature action blocked food.");
+                for (int i = 0; i < 30000 && model.Action < PetAction.Dig; i++) model.Advance(0.1, 0, 1920);
+                model.SetAnimal((PetAnimal)(((int)animal + 1) % 4));
+                Assert(model.Action == PetAction.Walk, "Changing species kept an old signature action.");
+                for (int action = 0; action < 2; action++)
+                    for (int frame = 0; frame < 2; frame++)
+                    {
+                        string pose = PetBehavior.SignatureAction(animal, action).ToString().ToLowerInvariant();
+                        PetAppearance.Draw(g, animal, action * 120 + frame * 60 + 3, (int)animal * 50 + 10, true, pose, frame * 0.5, 1);
+                    }
+            }
+            preview.Save(Path.Combine(artifacts, "animal-signatures.png"));
+        }
+        Console.WriteLine("PASS: eight species-specific actions, calm timing, species switching, jump and food.");
+    }
     public static void Run(string artifacts, bool includeUI = true)
     {
+        CheckSignatureActions(artifacts);
         // Random leisure must be reachable, finite and cosmetic; acorns still take priority.
         PetBehavior pet = new PetBehavior(new PetSession(), new Random(37), 300);
         HashSet<PetAction> seen = new HashSet<PetAction>();
@@ -74,7 +120,7 @@ public static class CustomizationRegressionTests
             Assert(pet.X >= -1920 && pet.X <= -76, "Pet escaped the display during leisure.");
             previous = pet.Action; previousX = pet.X;
         }
-        Assert(seen.Count == 4, "Not all four activities appeared during seeded walks.");
+        Assert(seen.Count == 6, "Common and squirrel-specific activities did not all appear.");
         Assert(pet.Stats.Fullness == 75 && pet.Stats.Mood == 75 && pet.Stats.Meals == 0, "Cosmetic snacks changed care stats.");
         for (int i = 0; i < 30000 && !PetBehavior.IsLeisure(pet.Action); i++) pet.Advance(0.1, -1920, 0);
         Assert(PetBehavior.IsLeisure(pet.Action), "Leisure was not reachable again.");

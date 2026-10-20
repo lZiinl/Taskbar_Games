@@ -31,6 +31,7 @@ namespace TaskbarGames.Games.Pet
             animal = PetAppearance.Parse(store.Data.PetAnimal);
             behavior = new PetBehavior(new PetSession(store.Data.PetFullness, store.Data.PetMood, store.Data.PetMeals),
                 new Random(), GameEnvironment.Display.WorkingArea.Left + 120);
+            behavior.SetAnimal(animal);
             behavior.Ate += delegate(Acorn acorn) {
                 AcornMarker marker;
                 if (markers.TryGetValue(acorn, out marker)) { markers.Remove(acorn); marker.Dispose(); }
@@ -142,7 +143,8 @@ namespace TaskbarGames.Games.Pet
         }
         void SelectAnimal(PetAnimal choice)
         {
-            animal = choice; store.Data.PetAnimal = choice.ToString().ToLowerInvariant(); SaveState();
+            animal = choice; behavior.SetAnimal(choice);
+            store.Data.PetAnimal = choice.ToString().ToLowerInvariant(); SaveState();
             Image oldFoodIcon = menu.Items[1].Image;
             menu.Items[1].Image = PetFood.Icon(animal);
             if (oldFoodIcon != null) oldFoodIcon.Dispose();
