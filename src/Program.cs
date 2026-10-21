@@ -10,7 +10,9 @@ using TaskbarGames.Shared;
 
 [assembly: AssemblyTitle("Taskbar_Games")]
 [assembly: AssemblyProduct("Taskbar_Games")]
-[assembly: AssemblyVersion("0.2.0.0")]
+[assembly: AssemblyVersion("0.3.0.0")]
+[assembly: AssemblyFileVersion("0.3.0.0")]
+[assembly: AssemblyInformationalVersion(TaskbarGames.Shared.ReleaseInfo.Version)]
 
 namespace TaskbarGames
 {
@@ -35,6 +37,7 @@ namespace TaskbarGames
                 try
                 {
                     Application.EnableVisualStyles();
+                    System.Net.ServicePointManager.SecurityProtocol = System.Net.SecurityProtocolType.Tls12;
                     Application.SetCompatibleTextRenderingDefault(false);
                     // 이 호출은 런처가 종료될 때까지 UI 이벤트를 처리한다.
                     // 게임 창만 닫는 경우 런처가 다시 표시되므로 애플리케이션은 계속 실행된다.

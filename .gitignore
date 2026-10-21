@@ -2,3 +2,8 @@
 /artifacts/
 *.user
 *.suo
+/server/data/
+/server/policy.json
+__pycache__/
+*.pyc
+.env

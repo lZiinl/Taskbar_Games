@@ -107,6 +107,8 @@ namespace TaskbarGames.Shared
         static int Add(int value, int delta) { return (int)Math.Min(Int32.MaxValue, (long)value + Math.Max(0, delta)); }
         public void Record(RunStats stats)
         {
+            if (mode == GameMode.Challenge && OnlineSession.Current != null && OnlineSession.Current.game == game.ToString())
+                OnlineSession.Current.Capture(stats);
             GameData data = store.Data;
             DateTime now = utcNow().ToUniversalTime();
             GameRecord record = Achievements.Record(data, game, mode);

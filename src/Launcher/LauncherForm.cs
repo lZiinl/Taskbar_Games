@@ -21,6 +21,7 @@ namespace TaskbarGames.Launcher
         readonly Timer displayTimer = new Timer();
         readonly ArcadeHints hints = new ArcadeHints();
         readonly ContextMenuStrip menu = new ContextMenuStrip();
+        readonly ToolStripMenuItem online = new ToolStripMenuItem("온라인 / v" + ReleaseInfo.Version);
 
         // 네이티브 최소 창 너비의 자동 확장을 막도록 최소·최대 크기를 동일하게 고정한다.
         // 각 버튼은 공통 스타일을 쓰고, 생성 함수만 전달하여 선택한 게임을 필요할 때 만든다.
@@ -71,6 +72,21 @@ namespace TaskbarGames.Launcher
                 Show(); Activate();
             });
             menu.Items.Add("기록실 / 칭호", null, delegate { using (RecordsForm records = new RecordsForm(GameKind.Fortress)) records.ShowDialog(this); });
+            online.Click += delegate { using (OnlineForm form = new OnlineForm()) form.ShowDialog(this); };
+            menu.Items.Add(online);
+            // 저장된 서버가 있을 때만 한 번 확인한다. 실패해도 팝업이나 게임 차단은 하지 않는다.
+            Shown += async delegate {
+                OnlineSettings settings = OnlineSettings.Load();
+                if (String.IsNullOrEmpty(settings.Endpoint)) return;
+                try
+                {
+                    ServerStatus status = await new OnlineClient(settings).Status();
+                    Version latest;
+                    if (!IsDisposed && Version.TryParse(status.latest_version, out latest) && latest > new Version(ReleaseInfo.Version))
+                        online.Text = "업데이트 있음 / 온라인";
+                }
+                catch { /* 네트워크 없이도 기존 런처를 그대로 이용한다. */ }
+            };
             menu.Items.Add("종료 (Esc)", null, delegate { Close(); });
             ContextMenuStrip = fortress.ContextMenuStrip = baseball.ContextMenuStrip = pet.ContextMenuStrip = runner.ContextMenuStrip = menu;
             PositionAboveTaskbar();

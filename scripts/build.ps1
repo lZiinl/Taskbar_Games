@@ -19,7 +19,7 @@ $iconPath = Join-Path $projectRoot 'assets\TaskbarGames.ico'
 $teamLogos = @(Get-ChildItem -LiteralPath (Join-Path $projectRoot 'assets\teams') -Filter '*.png' | Sort-Object Name)
 if ($teamLogos.Count -ne 10) { throw 'All ten team logos are required.' }
 $teamResources = @($teamLogos | ForEach-Object { '/resource:' + $_.FullName + ',Teams.' + $_.Name })
-& $compiler /nologo /codepage:65001 /target:winexe /optimize+ /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.Xml.dll "/win32icon:$iconPath" "/resource:$iconPath,TaskbarGames.ico" "/out:$output\Taskbar_Games.exe" @teamResources @sources
+& $compiler /nologo /codepage:65001 /target:winexe /optimize+ /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.Xml.dll /reference:System.Web.Extensions.dll /reference:System.Security.dll "/win32icon:$iconPath" "/resource:$iconPath,TaskbarGames.ico" "/out:$output\Taskbar_Games.exe" @teamResources @sources
 # 네이티브 컴파일러 실패는 PowerShell 예외가 아닐 수 있으므로 명시적으로 실패를 전달한다.
 if ($LASTEXITCODE -ne 0) { throw 'Build failed.' }
 Write-Output "Built: $output\Taskbar_Games.exe"

@@ -183,6 +183,8 @@ namespace TaskbarGames.Launcher
                 hints.SetToolTip(label, detail); Controls.Add(label);
             }
             Button retry = new PixelMenuButton("RETRY") { Bounds = new Rectangle(3, 47, 52, 11), DialogResult = DialogResult.Retry, AccessibleName = "다시 도전" };
+            // 온라인 새 판은 서버의 새 경기 번호가 필요하므로 온라인 창에서 시작한다.
+            if (OnlineSession.Current != null) retry.Enabled = false;
             Button back = new PixelMenuButton("BACK") { Bounds = new Rectangle(3, 59, 52, 12), DialogResult = DialogResult.Cancel, AccessibleName = "게임 선택" };
             hints.SetToolTip(retry, "다시 도전"); hints.SetToolTip(back, "게임 선택으로 돌아가기 (Esc)");
             CancelButton = back; Controls.AddRange(new Control[] { retry, back });

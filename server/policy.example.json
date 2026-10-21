@@ -1,0 +1,11 @@
+{
+  "latest_version": "0.3.0",
+  "minimum_version": "0.3.0",
+  "protocol": 1,
+  "download_url": "",
+  "games": {
+    "Baseball": { "rule": 1, "season": "friends-001", "seed": 20261020 },
+    "Fortress": { "rule": 1, "season": "friends-001", "seed": 20261021 },
+    "Runner": { "rule": 1, "season": "friends-001", "seed": 20261022 }
+  }
+}

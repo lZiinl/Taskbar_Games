@@ -40,7 +40,7 @@ namespace TaskbarGames.Games.Runner
         {
             store = GameEnvironment.Store;
             int best = (int)Math.Min(Int32.MaxValue, Achievements.Record(store.Data, GameKind.Runner, mode).BestScore);
-            session = new RunnerSession(new Random(), mode, best);
+            session = new RunnerSession(OnlineSession.RandomFor(GameKind.Runner), mode, best);
             progress = new ProgressTracker(store, GameKind.Runner, mode);
             FormClosing += delegate { SaveRecords(); };
             Text = "Taskbar_Games - Dino Runner"; Icon = ArcadeTheme.AppIcon;
@@ -76,7 +76,7 @@ namespace TaskbarGames.Games.Runner
             // 멈춘 화면은 매 틱 다시 그리지 않고 입력·상태 변화 시에만 무효화한다.
             timer.Tick += delegate {
                 Rectangle area = GameEnvironment.Display.WorkingArea;
-                if (Left != area.Left || Bottom != area.Bottom || Width != area.Width / 2) { SaveRecords(); PositionGame(); session.ResetForLayout(); progress = new ProgressTracker(store, GameKind.Runner, session.Mode); resultShown = false; Invalidate(); }
+                if (Left != area.Left || Bottom != area.Bottom || Width != CourseWidth(area)) { OnlineSession.CancelForLayout(); SaveRecords(); PositionGame(); session.ResetForLayout(); progress = new ProgressTracker(store, GameKind.Runner, session.Mode); resultShown = false; Invalidate(); }
                 double now = clock.Elapsed.TotalSeconds;
                 bool moving = session.Active && session.Phase == RunnerPhase.Running;
                 session.Advance(now - last, Width); last = now;
@@ -102,9 +102,10 @@ namespace TaskbarGames.Games.Runner
         void PositionGame()
         {
             Rectangle area = GameEnvironment.Display.WorkingArea;
-            MinimumSize = MaximumSize = new Size(area.Width / 2, 100);
-            Bounds = new Rectangle(area.Left, area.Bottom - 100, area.Width / 2, 100);
+            MinimumSize = MaximumSize = new Size(CourseWidth(area), 100);
+            Bounds = new Rectangle(area.Left, area.Bottom - 100, CourseWidth(area), 100);
         }
+        static int CourseWidth(Rectangle area) { return OnlineSession.Current == null ? area.Width / 2 : 480; }
         // 바닥선 → 공룡 → 장애물 → 안내·점수 순서로 그린다.
         // 모델의 공중 높이를 화면의 아래쪽 기준으로 변환하고 지상 달리기에는 발 프레임을 바꾼다.
         protected override void OnPaint(PaintEventArgs e)

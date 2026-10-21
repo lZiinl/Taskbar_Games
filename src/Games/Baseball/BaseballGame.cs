@@ -66,7 +66,7 @@ namespace TaskbarGames.Games.Baseball
             store = GameEnvironment.Store;
             batterUniform = TeamUniform.Find(store.Data.BatterTeam, true);
             pitcherUniform = TeamUniform.Find(store.Data.PitcherTeam, false);
-            session = new BaseballSession(new Random(), mode);
+            session = new BaseballSession(OnlineSession.RandomFor(GameKind.Baseball), mode);
             progress = new ProgressTracker(store, GameKind.Baseball, mode);
             session.AttemptCompleted += SaveRecords;
             FormClosing += delegate { SaveRecords(); };
@@ -223,7 +223,7 @@ namespace TaskbarGames.Games.Baseball
         void Tick(object sender, EventArgs e)
         {
             bool changed = false;
-            if (Bounds != GameEnvironment.Display.WorkingArea) { ResetLayout(); changed = true; }
+            if (Bounds != GameEnvironment.Display.WorkingArea) { OnlineSession.CancelForLayout(); ResetLayout(); changed = true; }
             changed = AdvanceToNow() || changed;
             UpdateTimer();
             if (changed) Invalidate();

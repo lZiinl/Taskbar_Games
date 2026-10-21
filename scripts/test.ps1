@@ -35,4 +35,5 @@ if ($IncludeUI) {
 [SharedRegressionTests]::Run($artifacts, $IncludeUI.IsPresent)
 [ChallengeRegressionTests]::Run($artifacts, $IncludeUI.IsPresent)
 [CustomizationRegressionTests]::Run($artifacts, $IncludeUI.IsPresent)
+[OnlineRegressionTests]::Run()
 if (-not $IncludeUI) { Write-Host 'PASS: headless checks completed. UI checks skipped (opt in with -IncludeUI).' }

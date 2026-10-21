@@ -106,7 +106,7 @@ namespace TaskbarGames.Games.Fortress
             KeyPreview = true;
             StartPosition = FormStartPosition.Manual;
             store = storage;
-            session = new FortressSession(new Random(), mode);
+            session = new FortressSession(OnlineSession.RandomFor(GameKind.Fortress), mode);
             progress = new ProgressTracker(store, GameKind.Fortress, mode);
             session.ShotFinished += OnShotFinished;
             SetTankColor(Color.FromArgb((store.Data.TankColor >> 16) & 255, (store.Data.TankColor >> 8) & 255, store.Data.TankColor & 255));
@@ -134,7 +134,7 @@ namespace TaskbarGames.Games.Fortress
 
         void ResetLayout()
         {
-            Bounds = GameEnvironment.Display.WorkingArea;
+            Bounds = PlayArea();
             ground = (ClientSize.Height - 2) / GameScale;
             muzzle = new PointF(87, ground - 29);
             panel = new Rectangle(126, (int)ground - 24, 200, 24);
@@ -223,7 +223,7 @@ namespace TaskbarGames.Games.Fortress
             double now = clock.Elapsed.TotalSeconds;
             double elapsed = Math.Max(0, now - lastTime); lastTime = now;
             bool changed = false;
-            if (Bounds != GameEnvironment.Display.WorkingArea) { ResetLayout(); changed = true; }
+            if (Bounds != PlayArea()) { OnlineSession.CancelForLayout(); ResetLayout(); changed = true; }
             changed = session.Advance(elapsed, MinimumTargetX()) || changed;
             if (debris.Count > 0) { UpdateDebris(Math.Min(0.05, elapsed)); changed = true; }
             UpdateTimerInterval(now);
@@ -238,6 +238,13 @@ namespace TaskbarGames.Games.Fortress
             SaveRecords();
         }
         void SaveRecords() { progress.Record(session.Stats); }
+        Rectangle PlayArea()
+        {
+            Rectangle area = GameEnvironment.Display.WorkingArea;
+            // 온라인 포트리스는 화면 해상도와 무관하게 같은 800픽셀 코스를 사용한다.
+            if (OnlineSession.Current != null) area.Width = 800;
+            return area;
+        }
         void ShowSummary()
         {
             if (resultShown || !focused || !session.IsComplete || session.ResultRemaining > 0) return;
